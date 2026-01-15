@@ -23,12 +23,12 @@ ORIGINAL_IMAGE_TAG ?=
 STRUCTURE_TEST_TARGET ?= normal
 
 PUSH ?= false
-BUILDX_PUSH_OPTIONS :=
+BUILDX_PUSH_OPTIONS := "-o type=tar,dest=build/topols.tar"
 ifeq ($(PUSH),true)
 BUILDX_PUSH_OPTIONS := --push
 endif
-ifeq ($(PUSH),tarball)
-BUILDX_PUSH_OPTIONS := "-o type=tar,dest=build/topols.tar"
+ifeq ($(PUSH),local)
+BUILDX_PUSH_OPTIONS :=
 endif
 
 PLATFORMS ?= linux/amd64,linux/arm64/v8,linux/ppc64le
