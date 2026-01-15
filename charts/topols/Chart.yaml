@@ -12,5 +12,13 @@ sources:
 dependencies:
   - name: cert-manager
     repository: https://charts.jetstack.io
-    version: 1.7.0
+    version: ~1.17.x
     condition: cert-manager.enabled
+
+annotations:
+  artifacthub.io/images: |
+    - name: topols-with-sidecar
+      image: ghcr.io/kvaster/topols-with-sidecar:0.39.0
+    - name: topols
+      image: ghcr.io/kvaster/topols:0.39.0
+  artifacthub.io/license: Apache-2.0
