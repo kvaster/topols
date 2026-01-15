@@ -42,6 +42,9 @@ ifeq ($(STRUCTURE_TEST_TARGET),with-sidecar)
 CONTAINER_STRUCTURE_TEST_IMAGE=$(IMAGE_PREFIX)topols-with-sidecar:devel
 endif
 
+export ENVTEST_KUBERNETES_VERSION
+export ENVTEST_ASSETS_DIR
+
 ##@ General
 
 # The help target prints out all targets with their descriptions organized
