@@ -82,6 +82,7 @@ You need to configure kube-scheduler to use topols-scheduler extender by referri
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | cert-manager.enabled | bool | `false` | Install cert-manager together. # ref: https://cert-manager.io/docs/installation/kubernetes/#installing-with-helm |
+| controller.additionalContainers | list | `[]` | Define extra containers to add to the Deployment. Please ensure not to use any existing container names. |
 | controller.affinity | object | `{"podAntiAffinity":{"requiredDuringSchedulingIgnoredDuringExecution":[{"labelSelector":{"matchExpressions":[{"key":"app.kubernetes.io/component","operator":"In","values":["controller"]},{"key":"app.kubernetes.io/name","operator":"In","values":["{{ include \"topols.name\" . }}"]}]},"topologyKey":"kubernetes.io/hostname"}]}}` | Specify affinity. # ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity |
 | controller.args | list | `[]` | Arguments to be passed to the command. |
 | controller.initContainers | list | `[]` | Additional initContainers for the controller service. |
@@ -93,6 +94,7 @@ You need to configure kube-scheduler to use topols-scheduler extender by referri
 | controller.podDisruptionBudget.enabled | bool | `true` | Specify podDisruptionBudget enabled. |
 | controller.podLabels | object | `{}` | Additional labels to be set on the controller pod. |
 | controller.priorityClassName | string | `nil` | Specify priorityClassName. |
+| controller.profiling.bindAddress | string | `""` | Enables pprof profiling server. If empty, profiling is disabled. |
 | controller.prometheus.podMonitor.additionalLabels | object | `{}` | Additional labels that can be used so PodMonitor will be discovered by Prometheus. |
 | controller.prometheus.podMonitor.enabled | bool | `false` | Set this to `true` to create PodMonitor for Prometheus operator. |
 | controller.prometheus.podMonitor.interval | string | `""` | Scrape interval. If not set, the Prometheus default scrape interval is used. |
@@ -128,6 +130,7 @@ You need to configure kube-scheduler to use topols-scheduler extender by referri
 | livenessProbe.topols_controller | object | `{"failureThreshold":null,"initialDelaySeconds":10,"periodSeconds":60,"timeoutSeconds":3}` | Specify livenessProbe. # ref: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/ |
 | livenessProbe.topols_node | object | `{"failureThreshold":null,"initialDelaySeconds":10,"periodSeconds":60,"timeoutSeconds":3}` | Specify resources. # ref: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/ |
 | livenessProbe.topols_scheduler | object | `{"failureThreshold":null,"initialDelaySeconds":10,"periodSeconds":60,"timeoutSeconds":3}` | Specify livenessProbe. # ref: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/ |
+| node.additionalContainers | list | `[]` | Define extra containers to add to the Daemonset. Please ensure not to use any existing container names. |
 | node.additionalVolumes | list | `[]` | Specify additional volumes without conflicting with default volumes most useful for initContainers but available to all containers in the pod. |
 | node.affinity | object | `{}` | Specify affinity. # ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity |
 | node.args | list | `[]` | Arguments to be passed to the command. |
@@ -138,8 +141,10 @@ You need to configure kube-scheduler to use topols-scheduler extender by referri
 | node.metrics.enabled | bool | `true` | If true, enable scraping of metrics by Prometheus. |
 | node.nodeSelector | object | `{}` | Specify nodeSelector. # ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/ |
 | node.podLabels | object | `{}` | Additional labels to be set on the node pods. |
+| node.podSecurityContext | object | `{}` | Pod securityContext. # ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/ |
 | node.poolPath | string | `"/mnt/pool"` |  |
 | node.priorityClassName | string | `nil` | Specify priorityClassName. |
+| node.profiling.bindAddress | string | `""` | Enables pprof profiling server. if empty profiling is disabled. |
 | node.prometheus.podMonitor.additionalLabels | object | `{}` | Additional labels that can be used so PodMonitor will be discovered by Prometheus. |
 | node.prometheus.podMonitor.enabled | bool | `false` | Set this to `true` to create PodMonitor for Prometheus operator. |
 | node.prometheus.podMonitor.interval | string | `""` | Scrape interval. If not set, the Prometheus default scrape interval is used. |
@@ -164,6 +169,7 @@ You need to configure kube-scheduler to use topols-scheduler extender by referri
 | resources.topols_controller | object | `{}` |  |
 | resources.topols_node | object | `{}` | Specify resources. # ref: https://kubernetes.io/docs/user-guide/compute-resources/ |
 | resources.topols_scheduler | object | `{}` |  |
+| scheduler.additionalContainers | list | `[]` | Define extra containers to add to the Daemonset. Please ensure not to use any existing container names. |
 | scheduler.affinity | object | `{"nodeAffinity":{"requiredDuringSchedulingIgnoredDuringExecution":{"nodeSelectorTerms":[{"matchExpressions":[{"key":"node-role.kubernetes.io/control-plane","operator":"Exists"}]}]}}}` | Specify affinity on the Deployment or DaemonSet. # ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity |
 | scheduler.args | list | `[]` | Arguments to be passed to the command. |
 | scheduler.deployment.replicaCount | int | `2` | Number of replicas for Deployment. |
@@ -175,13 +181,14 @@ You need to configure kube-scheduler to use topols-scheduler extender by referri
 | scheduler.options.listen.port | int | `9251` | Listen port. |
 | scheduler.podDisruptionBudget.enabled | bool | `true` | Specify podDisruptionBudget enabled. |
 | scheduler.podLabels | object | `{}` | Additional labels to be set on the scheduler pods. |
-| scheduler.priorityClassName | string | `nil` | Specify priorityClassName on the Deployment or DaemonSet. |
+| scheduler.priorityClassName | string | `"system-cluster-critical"` | Specify priorityClassName on the Deployment or DaemonSet. |
+| scheduler.profiling.bindAddress | string | `""` | Enables pprof profiling server. If empty, profiling is disabled. |
 | scheduler.schedulerOptions | object | `{}` | Tune the Node scoring. ref: https://github.com/kvaster/topols/blob/master/deploy/README.md |
 | scheduler.service.clusterIP | string | `nil` | Specify Service clusterIP. |
 | scheduler.service.nodePort | int | `nil` | Specify nodePort. |
 | scheduler.service.type | string | `"LoadBalancer"` | Specify Service type. |
 | scheduler.terminationGracePeriodSeconds | int | `nil` | Specify terminationGracePeriodSeconds on the Deployment or DaemonSet. |
-| scheduler.tolerations | list | `[{"key":"CriticalAddonsOnly","operator":"Exists"},{"effect":"NoSchedule","key":"node-role.kubernetes.io/control-plane"}]` | Specify tolerations on the Deployment or DaemonSet. # ref: https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/ |
+| scheduler.tolerations | list | `[{"effect":"NoSchedule","key":"node-role.kubernetes.io/control-plane"}]` | Specify tolerations on the Deployment or DaemonSet. # ref: https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/ |
 | scheduler.type | string | `"daemonset"` | If you run with a managed control plane (such as GKE, AKS, etc), topols-scheduler should be deployed as Deployment and Service. topols-scheduler should otherwise be deployed as DaemonSet in unmanaged (i.e. bare metal) deployments. possible values:  daemonset/deployment |
 | scheduler.updateStrategy | object | `{}` | Specify updateStrategy on the Deployment or DaemonSet. |
 | securityContext.runAsGroup | int | `10000` | Specify runAsGroup. |
@@ -190,8 +197,12 @@ You need to configure kube-scheduler to use topols-scheduler extender by referri
 | storageClasses | list | `[{"name":"topols","storageClass":{"additionalParameters":{},"allowVolumeExpansion":true,"annotations":{},"isDefaultClass":false,"reclaimPolicy":null,"volumeBindingMode":"WaitForFirstConsumer"}}]` | Whether to create storageclass(es) ref: https://kubernetes.io/docs/concepts/storage/storage-classes/ |
 | webhook.caBundle | string | `nil` | Specify the certificate to be used for AdmissionWebhook. |
 | webhook.existingCertManagerIssuer | object | `{}` | Specify the cert-manager issuer to be used for AdmissionWebhook. |
-| webhook.podMutatingWebhook.enabled | bool | `true` | Enable Pod MutatingWebhook. |
+| webhook.podMutatingWebhook.enabled | bool | `false` | Enable Pod MutatingWebhook. |
+| webhook.podMutatingWebhook.ignoreNamespaces | list | `["kube-system","topolvm-system"]` | Namespaces to be ignored by the Pod MutatingWebhook. |
+| webhook.podMutatingWebhook.objectSelector | object | `{}` | Labels required on Pods for webhook action. **WARNING**: Modifying objectSelector can affect TopoLS Pod scheduling. Proceed with caution. # ref: https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/#matching-requests-objectselector |
 | webhook.pvcMutatingWebhook.enabled | bool | `true` | Enable PVC MutatingWebhook. |
+| webhook.pvcMutatingWebhook.ignoreNamespaces | list | `["kube-system","topolvm-system"]` | Namespaces to be ignored by the PVC MutatingWebhook. |
+| webhook.pvcMutatingWebhook.objectSelector | object | `{}` | Labels required on PVCs for webhook action. **WARNING**: Modifying objectSelector can affect TopoLS PVC management. Proceed with caution. # ref: https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/#matching-requests-objectselector |
 
 ## Generate Manifests
 

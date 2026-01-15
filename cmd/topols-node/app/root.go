@@ -13,11 +13,12 @@ import (
 )
 
 var config struct {
-	csiSocket           string
-	metricsAddr         string
-	secureMetricsServer bool
-	poolPath            string
-	zapOpts             zap.Options
+	csiSocket            string
+	metricsAddr          string
+	secureMetricsServer  bool
+	poolPath             string
+	zapOpts              zap.Options
+	profilingBindAddress string
 }
 
 var rootCmd = &cobra.Command{
@@ -45,6 +46,7 @@ func Execute() {
 	}
 }
 
+//nolint:lll
 func init() {
 	fs := rootCmd.Flags()
 	fs.StringVar(&config.csiSocket, "csi-socket", topols.DefaultCSISocket, "UNIX domain socket filename for CSI")
@@ -52,13 +54,16 @@ func init() {
 	fs.BoolVar(&config.secureMetricsServer, "secure-metrics-server", false, "Secures the metrics server")
 	fs.StringVar(&config.poolPath, "pool-path", "/mnt/pool", "Path to folder with config and mounted btrfs file systems")
 	fs.String("nodename", "", "The resource name of the running node")
+	fs.StringVar(&config.profilingBindAddress, "profiling-bind-address", "", "Bind pprof profiling to the given network address. If empty, profiling is disabled.")
 
-	viper.BindEnv("nodename", "NODE_NAME")
-	viper.BindPFlag("nodename", fs.Lookup("nodename"))
+	_ = viper.BindEnv("nodename", "NODE_NAME")
+	_ = viper.BindPFlag("nodename", fs.Lookup("nodename"))
 
-	goflags := flag.NewFlagSet("klog", flag.ExitOnError)
-	klog.InitFlags(goflags)
-	config.zapOpts.BindFlags(goflags)
+	klogFlags := flag.NewFlagSet("klog", flag.ExitOnError)
+	klog.InitFlags(klogFlags)
+	fs.AddGoFlagSet(klogFlags)
 
-	fs.AddGoFlagSet(goflags)
+	zapFlags := flag.NewFlagSet("zap", flag.ExitOnError)
+	config.zapOpts.BindFlags(zapFlags)
+	fs.AddGoFlagSet(zapFlags)
 }

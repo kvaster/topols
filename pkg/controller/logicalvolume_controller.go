@@ -8,7 +8,12 @@ import (
 )
 
 // SetupLogicalVolumeReconcilerWithServices creates LogicalVolumeReconciler and sets up with manager.
-func SetupLogicalVolumeReconcilerWithServices(mgr ctrl.Manager, client client.Client, lvmc lsm.Client, nodeName string) error {
+func SetupLogicalVolumeReconcilerWithServices(
+	mgr ctrl.Manager,
+	client client.Client,
+	lvmc lsm.Client,
+	nodeName string,
+) error {
 	reconciler := internalController.NewLogicalVolumeReconciler(client, lvmc, nodeName)
 	return reconciler.SetupWithManager(mgr)
 }

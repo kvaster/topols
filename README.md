@@ -23,7 +23,7 @@ It can be considered as a specific implementation of [local persistent volumes](
 Supported environments
 ----------------------
 
-- Kubernetes: 1.29, 1.28, 1.27
+- Kubernetes: 1.34, 1.33, 1.32
 - Node OS: Linux
 - Filesystems: btrfs
 

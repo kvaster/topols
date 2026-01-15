@@ -22,10 +22,12 @@ If we find some interesting features added in new versions, please consider if w
 Choose the next version and check the [release note](https://kubernetes.io/docs/setup/release/notes/). e.g. 1.17, 1.18, 1.19 -> 1.18, 1.19, 1.20
 
 Edit the following files.
+- `docs/advanced-setup.md`
 - `README.md`
 - `versions.mk`
 - `.github/workflows/e2e-k8s-incluster-lvmd.yaml`
 - `.github/workflows/e2e-k8s-workflow.yaml`
+- `test/e2e/README.md`
 
 Next, we should update `go.mod` by the following commands.
 Please note that Kubernetes v1 corresponds with v0 for the release tags. For example, v1.17.2 corresponds with the `v0.17.2` tag.
@@ -80,6 +82,7 @@ Edit the following files.
 
 TopoLVM does not use all the sidecars listed [here](https://kubernetes-csi.github.io/docs/sidecar-containers.html).
 Have a look at `csi-sidecars.mk` first and understand what sidecars are actually being used.
+The [checklist that triggers the update operation](https://github.com/topolvm/topolvm/blob/main/.github/ISSUE_TEMPLATE/update_supporting_kubernetes.md) does not include `liveness probe` and `node driver registrar`, but they will also be updated.
 
 Check the release pages of the sidecars under [kubernetes-csi](https://github.com/kubernetes-csi) one by one and choose the latest version for each sidecar which satisfies both "Minimal Kubernetes version" and "Supported CSI spec versions".
 
@@ -93,6 +96,23 @@ For example, see https://github.com/kubernetes-csi/external-provisioner/blob/mas
 
 - `charts/topolvm/templates/controller/clusterroles.yaml`
 - `charts/topolvm/templates/controller/roles.yaml`
+
+If the `external-snapshotter` sidecar is updated, you also update `go.mod` and source code accordingly.
+
+#### cert-manager
+
+As for cert-manager, we have a policy to use LTS release. Check [the current LTS release](https://cert-manager.io/docs/releases/#long-term-support-releases) and update the cert-manager version if necessary.
+
+To update the cert-manager version, change the version in `charts/topolvm/Chart.yaml`. Then, run a following command.
+
+```console
+$ bin/helm dependency update charts/topolvm
+```
+
+Please also update the version in the following files.
+
+- `versions.mk`
+- `docs/getting-started.md`
 
 #### Depending Tools
 
@@ -109,8 +129,7 @@ The following tools depend on kubernetes, use appropriate version associating to
 - [kind](https://github.com/kubernetes-sigs/kind/releases)
 - [minikube](https://github.com/kubernetes/minikube/releases)
 
-In `.github/workflows/e2e-k8s-incluster-lvmd.yaml`, minikube depends on some other tools,
-so please check if these tools are also needed to be upgraded.
+Update `cri-dockerd` to a version specified in CRI_DOCKERD_VERSION in [the minikube Dockerfile](https://github.com/kubernetes/minikube/blob/master/deploy/kicbase/Dockerfile) or newer.
 
 #### Depending Modules
 
@@ -119,6 +138,12 @@ Read [kubernetes go.mod](https://github.com/kubernetes/kubernetes/blob/master/go
 #### Update Upstream Information
 
 Visit [the upstream web page](https://kubernetes-csi.github.io/docs/drivers.html) to check current TopoLVM information. If some information is old, create PR to update the information
+
+#### Update Ubuntu and Debian
+
+If the support term for using Ubuntu is about to expire, update the versions. The Debian version in the `Dockerfile` should also be updated. The target version can be found in the updated Ubuntu image at `/etc/debian_version`.
+
+Note that we use the oldest supported Ubuntu LTS version for as long as possible to ensure compatibility between the host kernel and the mkfs tools in the image. See also `docs/limitations.md`.
 
 #### Final Check
 

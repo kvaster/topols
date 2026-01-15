@@ -4,7 +4,6 @@ SUDO := sudo
 CURL := curl -sSLf
 BINDIR := $(shell pwd)/bin
 CONTROLLER_GEN := $(BINDIR)/controller-gen
-STATICCHECK := $(BINDIR)/staticcheck
 CONTAINER_STRUCTURE_TEST := $(BINDIR)/container-structure-test
 GOLANGCI_LINT = $(BINDIR)/golangci-lint
 PROTOC := PATH=$(BINDIR):$(PATH) $(BINDIR)/protoc -I=$(shell pwd)/include:.
@@ -90,7 +89,6 @@ check-uncommitted: generate ## Check if latest generated artifacts are committed
 lint: ## Run lint
 	test -z "$$(gofmt -s -l . | grep -vE '^vendor|^api/v1/zz_generated.deepcopy.go' | tee /dev/stderr)"
 	$(GOLANGCI_LINT) run
-	$(STATICCHECK) ./...
 	go vet ./...
 	test -z "$$(go vet ./... | grep -v '^vendor' | tee /dev/stderr)"
 
@@ -102,18 +100,20 @@ lint-fix: ## Run golangci-lint linter and perform fixes
 test: lint ## Run lint and unit tests.
 	go install ./...
 
-	mkdir -p $(ENVTEST_ASSETS_DIR)
-	source <($(BINDIR)/setup-envtest use $(ENVTEST_KUBERNETES_VERSION) --bin-dir=$(ENVTEST_ASSETS_DIR) -p env); GOLANG_PROTOBUF_REGISTRATION_CONFLICT=warn go test -count=1 -race -v --timeout=120s ./...
+	GOLANG_PROTOBUF_REGISTRATION_CONFLICT=warn go test -count=1 -race -v --timeout=120s ./...
 
 groupname-test: ## Run unit tests that depends on the groupname.
 	go install ./...
 
-	mkdir -p $(ENVTEST_ASSETS_DIR)
-	source <($(BINDIR)/setup-envtest use $(ENVTEST_KUBERNETES_VERSION) --bin-dir=$(ENVTEST_ASSETS_DIR) -p env); GOLANG_PROTOBUF_REGISTRATION_CONFLICT=warn TEST_LEGACY=true go test -count=1 -race -v --timeout=60s ./internal/client/*
+	GOLANG_PROTOBUF_REGISTRATION_CONFLICT=warn TEST_LEGACY=true go test -count=1 -race -v --timeout=60s ./internal/client/*
 	TEST_LEGACY=true go test -count=1 -race -v --timeout=60s ./constants*.go
 
 .PHONY: clean
-clean: ## Clean working directory.
+clean: ## Clean built files on the working directory.
+	rm -rf build/
+
+.PHONY: distclean
+distclean: clean ## Clean all on the working directory.
 	rm -rf build/
 	rm -rf bin/
 	rm -rf include/
@@ -216,7 +216,7 @@ $(BINDIR):
 .PHONY: install-container-structure-test
 install-container-structure-test: | $(BINDIR)
 	$(CURL) -o $(CONTAINER_STRUCTURE_TEST) \
-		https://storage.googleapis.com/container-structure-test/v$(CONTAINER_STRUCTURE_TEST_VERSION)/container-structure-test-linux-amd64 \
+		https://github.com/GoogleContainerTools/container-structure-test/releases/download/v$(CONTAINER_STRUCTURE_TEST_VERSION)/container-structure-test-linux-amd64 \
     && chmod +x $(CONTAINER_STRUCTURE_TEST)
 
 .PHONY: install-helm
@@ -230,10 +230,7 @@ install-helm-docs: | $(BINDIR)
 
 .PHONY: tools
 tools: install-container-structure-test install-helm install-helm-docs | $(BINDIR) ## Install development tools.
-	GOBIN=$(BINDIR) go install honnef.co/go/tools/cmd/staticcheck@latest
 	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(shell dirname $(GOLANGCI_LINT)) $(GOLANGCI_LINT_VERSION)
-	# Follow the official documentation to install the `latest` version, because explicitly specifying the version will get an error.
-	GOBIN=$(BINDIR) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
 	GOBIN=$(BINDIR) go install sigs.k8s.io/controller-tools/cmd/controller-gen@v$(CONTROLLER_TOOLS_VERSION)
 
 	$(CURL) -o protoc.zip https://github.com/protocolbuffers/protobuf/releases/download/v$(PROTOC_VERSION)/protoc-$(PROTOC_VERSION)-linux-x86_64.zip

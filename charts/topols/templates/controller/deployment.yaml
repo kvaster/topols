@@ -19,12 +19,12 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/component: controller
-      {{ include "topols.selectorLabels" . | nindent 6 }}
+      {{- include "topols.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
         app.kubernetes.io/component: controller
-        {{ include "topols.selectorLabels" . | nindent 8 }}
+        {{- include "topols.selectorLabels" . | nindent 8 }}
         {{- with .Values.controller.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -49,13 +49,18 @@ spec:
       containers:
         - name: topols-controller
           image: "{{ .Values.image.repository }}:{{ default .Chart.AppVersion .Values.image.tag }}"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
           command:
             - /topols-controller
-            {{ if not .Values.controller.leaderElection.enabled }}
+            {{- if not .Values.controller.leaderElection.enabled }}
             - --leader-election=false
-            {{ else }}
+            {{- else }}
             - --leader-election-namespace={{ .Release.Namespace }}
-            {{ end }}
+            {{- end }}
             {{- if or .Values.webhook.podMutatingWebhook.enabled .Values.webhook.pvcMutatingWebhook.enabled }}
             - --cert-dir=/certs
             {{- else }}
@@ -64,12 +69,15 @@ spec:
             {{- if .Values.controller.nodeFinalize.skipped }}
             - --skip-node-finalize
             {{- end }}
-          {{- with .Values.controller.args }}
-          args: {{ toYaml . | nindent 12 }}
-          {{- end }}
+            {{- if .Values.controller.profiling.bindAddress }}
+            - --profiling-bind-address={{ .Values.controller.profiling.bindAddress }}
+            {{- end }}
           {{- with .Values.env.topols_controller }}
           env:
             {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.controller.args }}
+          args: {{ toYaml . | nindent 12 }}
           {{- end }}
           ports:
             - containerPort: 9443
@@ -129,6 +137,11 @@ spec:
           imagePullPolicy: {{ . }}
           {{- end }}
           {{- with .Values.resources.csi_provisioner }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
           resources: {{ toYaml . | nindent 12 }}
           {{- end }}
           {{- with .Values.env.csi_provisioner }}
@@ -138,10 +151,10 @@ spec:
             - /csi-provisioner
             - --csi-address=/run/topols/csi-topols.sock
             - --feature-gates=Topology=true
-            {{ if .Values.controller.leaderElection.enabled }}
+            {{- if .Values.controller.leaderElection.enabled }}
             - --leader-election
             - --leader-election-namespace={{ .Release.Namespace }}
-            {{ end }}
+            {{- end }}
             - --http-endpoint=:9809
             {{- with .Values.controller.storageCapacityTracking.enabled }}
             - --enable-capacity
@@ -174,6 +187,11 @@ spec:
           {{- with .Values.image.pullPolicy }}
           imagePullPolicy: {{ . }}
           {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
           {{- with .Values.resources.csi_resizer }}
           resources: {{ toYaml . | nindent 12 }}
           {{- end }}
@@ -183,10 +201,10 @@ spec:
           command:
             - /csi-resizer
             - --csi-address=/run/topols/csi-topols.sock
-            {{ if .Values.controller.leaderElection.enabled }}
+            {{- if .Values.controller.leaderElection.enabled }}
             - --leader-election
             - --leader-election-namespace={{ .Release.Namespace }}
-            {{ end }}
+            {{- end }}
             - --http-endpoint=:9810
           ports:
             - containerPort: 9810
@@ -205,6 +223,11 @@ spec:
           {{- with .Values.image.pullPolicy }}
           imagePullPolicy: {{ . }}
           {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
           {{- with .Values.resources.csi_snapshotter }}
           resources: {{ toYaml . | nindent 12 }}
           {{- end }}
@@ -214,10 +237,10 @@ spec:
           command:
             - /csi-snapshotter
             - --csi-address=/run/topols/csi-topols.sock
-            {{ if .Values.controller.leaderElection.enabled }}
+            {{- if .Values.controller.leaderElection.enabled }}
             - --leader-election
             - --leader-election-namespace={{ .Release.Namespace }}
-            {{ end }}
+            {{- end }}
             - --http-endpoint=:9811
           ports:
             - containerPort: 9811
@@ -236,6 +259,11 @@ spec:
           {{- with .Values.image.pullPolicy }}
           imagePullPolicy: {{ . }}
           {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
           command:
             - /livenessprobe
             - --csi-address=/run/topols/csi-topols.sock
@@ -250,6 +278,9 @@ spec:
           env: {{ toYaml . | nindent 12 }}
           {{- end }}
 
+        {{- with .Values.controller.additionalContainers }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       volumes:
         {{- if or .Values.webhook.podMutatingWebhook.enabled .Values.webhook.pvcMutatingWebhook.enabled }}
         - name: certs

@@ -111,12 +111,12 @@ func (c *btrfs) CreateLV(name, deviceClass string, noCow bool, size uint64) (*ls
 	v := &lsm.LogicalVolume{Name: name, DeviceClass: dc.Name, Size: size}
 	path := c.GetPath(v)
 
-	_, err := runCmd("/sbin/btrfs", "subvol", "create", path)
+	_, err := runBtrfs("subvol", "create", path)
 	if err != nil {
 		return nil, err
 	}
 
-	_, err = runCmd("/sbin/btrfs", "qgroup", "limit", strconv.FormatUint(size, 10), path)
+	_, err = runBtrfs("qgroup", "limit", strconv.FormatUint(size, 10), path)
 	if err != nil {
 		_ = removeSubvol(path)
 		return nil, err
@@ -165,12 +165,12 @@ func (c *btrfs) CreateLVSnapshot(name, deviceClass, sourceVolID string, size uin
 	}
 	args = append(args, srcPath, path)
 
-	_, err := runCmd("/sbin/btrfs", args...)
+	_, err := runBtrfs(args...)
 	if err != nil {
 		return nil, err
 	}
 
-	_, err = runCmd("/sbin/btrfs", "qgroup", "limit", strconv.FormatUint(size, 10), path)
+	_, err = runBtrfs("qgroup", "limit", strconv.FormatUint(size, 10), path)
 	if err != nil {
 		_ = removeSubvol(path)
 		return nil, err
@@ -190,12 +190,12 @@ func removeSubvol(path string) error {
 		return err
 	}
 
-	_, err = runCmd("/sbin/btrfs", "qgroup", "destroy", "0/"+strconv.FormatUint(subvolId, 10), path)
+	_, err = runBtrfs("qgroup", "destroy", "0/"+strconv.FormatUint(subvolId, 10), path)
 	if err != nil {
 		btrfsLogger.Info("Warning: error on qgroup destroy", "Err", err.Error(), "Path", path)
 	}
 
-	_, err = runCmd("/sbin/btrfs", "subvol", "delete", "-c", path)
+	_, err = runBtrfs("subvol", "delete", "-c", path)
 	if err != nil {
 		btrfsLogger.Info("Error on subvol delete", "Err", err.Error(), "Path", path)
 		return err
@@ -251,7 +251,7 @@ func (c *btrfs) ResizeLV(name, deviceClass string, size uint64) error {
 
 	path := c.GetPath(v)
 
-	_, err := runCmd("/sbin/btrfs", "qgroup", "limit", strconv.FormatUint(size, 10), path)
+	_, err := runBtrfs("qgroup", "limit", strconv.FormatUint(size, 10), path)
 	if err != nil {
 		return err
 	}
@@ -297,7 +297,7 @@ func (c *btrfs) NodeStats() (*lsm.NodeStats, error) {
 	btrfsLogger.Info("NodeStats called")
 
 	var defaultDc *lsm.DeviceClassStats
-	var stats []*lsm.DeviceClassStats
+	stats := make([]*lsm.DeviceClassStats, 0, len(c.deviceClasses))
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -411,7 +411,7 @@ func (c *btrfs) loadConfig() {
 	defer c.mu.Unlock()
 
 	dcMap := make(map[string]bool)
-	var dcs []*deviceClass
+	dcs := make([]*deviceClass, 0, len(cnf.DeviceClasses))
 	for _, dcc := range cnf.DeviceClasses {
 		dc := (*deviceClass)(nil)
 		for _, d := range c.deviceClasses {
@@ -474,7 +474,7 @@ func (c *btrfs) loadConfig() {
 }
 
 func parseSubvolume(path string) (uint64, uint64, uint64, error) {
-	out, err := runCmd("/sbin/btrfs", "subvol", "show", "--raw", path)
+	out, err := runBtrfs("subvol", "show", "--raw", path)
 	if err != nil {
 		return 0, 0, 0, err
 	}
@@ -509,6 +509,10 @@ func parseSubvolume(path string) (uint64, uint64, uint64, error) {
 	}
 
 	return limit, used, volId, nil
+}
+
+func runBtrfs(args ...string) (string, error) {
+	return runCmd("/sbin/btrfs", args...)
 }
 
 func runCmd(cmd string, args ...string) (string, error) {

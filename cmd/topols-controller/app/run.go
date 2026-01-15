@@ -10,10 +10,10 @@ import (
 	"github.com/kvaster/topols"
 	topolsv1 "github.com/kvaster/topols/api/v1"
 	clientwrapper "github.com/kvaster/topols/internal/client"
-	"github.com/kvaster/topols/internal/controller"
-	"github.com/kvaster/topols/internal/driver"
 	"github.com/kvaster/topols/internal/hook"
 	"github.com/kvaster/topols/internal/runners"
+	"github.com/kvaster/topols/pkg/controller"
+	"github.com/kvaster/topols/pkg/driver"
 	"google.golang.org/grpc"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -82,6 +82,7 @@ func subMain() error {
 			Port:    hookPort,
 			CertDir: config.certDir,
 		}),
+		PprofBindAddress: config.profilingBindAddress,
 	})
 	if err != nil {
 		return err
@@ -103,14 +104,12 @@ func subMain() error {
 	}
 
 	// register controllers
-	nodecontroller := controller.NewNodeReconciler(client, config.skipNodeFinalize)
-	if err := nodecontroller.SetupWithManager(mgr); err != nil {
+	if err := controller.SetupNodeReconciler(mgr, client, config.skipNodeFinalize); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Node")
 		return err
 	}
 
-	pvccontroller := controller.NewPersistentVolumeClaimReconciler(client, apiReader)
-	if err := pvccontroller.SetupWithManager(mgr); err != nil {
+	if err := controller.SetupPersistentVolumeClaimReconciler(mgr, client, apiReader); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "PersistentVolumeClaim")
 		return err
 	}

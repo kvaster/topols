@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/kvaster/topols"
@@ -15,6 +16,8 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -105,6 +108,7 @@ func (v *volumeGetter) Get(ctx context.Context, volumeID string) (*topolsv1.Logi
 	for _, lv := range lvList.Items {
 		if lv.Status.VolumeID == volumeID {
 			count++
+			lv := lv
 			foundLv = &lv
 		}
 	}
@@ -141,7 +145,7 @@ func NewLogicalVolumeService(mgr manager.Manager) (*LogicalVolumeService, error)
 }
 
 // CreateVolume creates volume
-func (s *LogicalVolumeService) CreateVolume(ctx context.Context, node, dc string, noCow bool, name, sourceName string, requestBytes int64) (string, error) {
+func (s *LogicalVolumeService) CreateVolume(ctx context.Context, node, dc string, noCow bool, name, sourceName string, requestBytes int64) (*topolsv1.LogicalVolume, error) {
 	logger.Info("k8s.CreateVolume called", "name", name, "node", node, "size", requestBytes, "sourceName", sourceName)
 
 	var lv *topolsv1.LogicalVolume
@@ -176,34 +180,7 @@ func (s *LogicalVolumeService) CreateVolume(ctx context.Context, node, dc string
 		}
 	}
 
-	existingLV := new(topolsv1.LogicalVolume)
-	err := s.getter.Get(ctx, client.ObjectKey{Name: name}, existingLV)
-	if err != nil {
-		if !apierrors.IsNotFound(err) {
-			return "", err
-		}
-
-		err := s.writer.Create(ctx, lv)
-		if err != nil {
-			return "", err
-		}
-		logger.Info("created LogicalVolume CR", "name", name, "sourceID", lv.Spec.Source)
-	} else {
-		// LV with same name was found; check compatibility
-		// skip check of capabilities because (1) we allow both of two access types, and (2) we allow only one access mode
-		// for ease of comparison, sizes are compared strictly, not by compatibility of ranges
-		if !existingLV.IsCompatibleWith(lv) {
-			return "", status.Error(codes.AlreadyExists, "Incompatible LogicalVolume already exists")
-		}
-		// compatible LV was found
-	}
-
-	volumeID, err := s.waitForStatusUpdate(ctx, name)
-	if err != nil {
-		return "", err
-	}
-
-	return volumeID, nil
+	return s.createAndWait(ctx, lv)
 }
 
 // DeleteVolume deletes volume
@@ -212,7 +189,7 @@ func (s *LogicalVolumeService) DeleteVolume(ctx context.Context, volumeID string
 
 	lv, err := s.GetVolume(ctx, volumeID)
 	if err != nil {
-		if err == ErrVolumeNotFound {
+		if errors.Is(err, ErrVolumeNotFound) {
 			logger.Info("volume is not found", "volume_id", volumeID)
 			return nil
 		}
@@ -228,27 +205,27 @@ func (s *LogicalVolumeService) DeleteVolume(ctx context.Context, volumeID string
 	}
 
 	// wait until delete the target volume
-	for {
-		logger.Info("waiting for delete LogicalVolume", "name", lv.Name)
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(100 * time.Millisecond):
-		}
-
-		err := s.getter.Get(ctx, client.ObjectKey{Name: lv.Name}, new(topolsv1.LogicalVolume))
-		if err != nil {
+	return wait.Backoff{
+		Duration: 100 * time.Millisecond, // initial backoff
+		Factor:   2,                      // factor for duration increase
+		Jitter:   0.1,
+		Steps:    math.MaxInt, // run for infinity; we assume context gets canceled
+		Cap:      10 * time.Second,
+	}.DelayFunc().Until(ctx, true, false, func(ctx context.Context) (bool, error) {
+		if err := s.getter.Get(ctx, client.ObjectKey{Name: lv.Name}, new(topolsv1.LogicalVolume)); err != nil {
 			if apierrors.IsNotFound(err) {
-				return nil
+				return true, nil
 			}
 			logger.Error(err, "failed to get LogicalVolume", "name", lv.Name)
-			return err
+			return false, err
 		}
-	}
+		logger.Info("waiting for LogicalVolume to be deleted", "name", lv.Name)
+		return false, nil
+	})
 }
 
 // CreateSnapshot creates a snapshot of existing volume.
-func (s *LogicalVolumeService) CreateSnapshot(ctx context.Context, node, dc, sourceVol, sname, accessType string, snapSize resource.Quantity) (string, error) {
+func (s *LogicalVolumeService) CreateSnapshot(ctx context.Context, node, dc, sourceVol, sname, accessType string, snapSize resource.Quantity) (*topolsv1.LogicalVolume, error) {
 	logger.Info("CreateSnapshot called", "name", sname)
 	snapshotLV := &topolsv1.LogicalVolume{
 		ObjectMeta: metav1.ObjectMeta{
@@ -264,75 +241,63 @@ func (s *LogicalVolumeService) CreateSnapshot(ctx context.Context, node, dc, sou
 		},
 	}
 
-	existingSnapshot := new(topolsv1.LogicalVolume)
-	err := s.getter.Get(ctx, client.ObjectKey{Name: sname}, existingSnapshot)
-	if err != nil {
-		if !apierrors.IsNotFound(err) {
-			return "", err
-		}
-		err := s.writer.Create(ctx, snapshotLV)
-		if err != nil {
-			return "", err
-		}
-		logger.Info("created LogicalVolume CR", "name", sname, "source", snapshotLV.Spec.Source, "accessType", snapshotLV.Spec.AccessType)
-	} else {
-		if !existingSnapshot.IsCompatibleWith(snapshotLV) {
-			return "", status.Error(codes.AlreadyExists, "Incompatible LogicalVolume already exists")
-		}
-	}
-
-	volumeID, err := s.waitForStatusUpdate(ctx, sname)
-	if err != nil {
-		return "", err
-	}
-
-	return volumeID, nil
+	return s.createAndWait(ctx, snapshotLV)
 }
 
 // ExpandVolume expands volume
-func (s *LogicalVolumeService) ExpandVolume(ctx context.Context, volumeID string, requestBytes int64) error {
-	logger.Info("k8s.ExpandVolume called", "volumeID", volumeID, "requestBytes", requestBytes)
+func (s *LogicalVolumeService) ExpandVolume(ctx context.Context, volumeID string, requestBytes int64) (*topolsv1.LogicalVolume, error) {
+	logger := logger.WithValues("volume_id", volumeID, "size", requestBytes)
+	logger.Info("k8s.ExpandVolume called")
+	request := resource.NewQuantity(requestBytes, resource.BinarySI)
 
 	lv, err := s.GetVolume(ctx, volumeID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	err = s.updateSpecSize(ctx, volumeID, resource.NewQuantity(requestBytes, resource.BinarySI))
+	err = s.updateSpecSize(ctx, volumeID, request)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	// wait until topols-node expands the target volume
-	for {
-		logger.Info("waiting for update of 'status.currentSize'", "name", lv.Name)
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(1 * time.Second):
+	var changedLV topolsv1.LogicalVolume
+	return &changedLV, wait.Backoff{
+		Duration: 1 * time.Second, // initial backoff
+		Factor:   2,               // factor for duration increase
+		Jitter:   0.1,
+		Steps:    math.MaxInt, // run for infinity; we assume context gets canceled
+		Cap:      10 * time.Second,
+	}.DelayFunc().Until(ctx, true, false, func(ctx context.Context) (bool, error) {
+		if err := s.getter.Get(ctx, client.ObjectKey{Name: lv.Name}, &changedLV); err != nil {
+			logger.Error(err, "failed to get LogicalVolume", "name", lv.Name)
+			return false, err
 		}
 
-		var changedLV topolsv1.LogicalVolume
-		err := s.getter.Get(ctx, client.ObjectKey{Name: lv.Name}, &changedLV)
-		if err != nil {
-			logger.Error(err, "failed to get LogicalVolume", "name", lv.Name)
-			return err
-		}
 		if changedLV.Status.Code != codes.OK {
-			return status.Error(changedLV.Status.Code, changedLV.Status.Message)
+			return false, status.Error(changedLV.Status.Code, changedLV.Status.Message)
 		}
+
 		if changedLV.Status.CurrentSize == nil {
+			logger.Info("waiting for update of 'status.currentSize' "+
+				"to be filled initially", "name", lv.Name)
 			// WA: since Status.CurrentSize is added in v0.4.0. it may be missing.
 			// if the expansion is completed, it is filled, so wait for that.
-			continue
-		}
-		if changedLV.Status.CurrentSize.Value() != changedLV.Spec.Size.Value() {
-			logger.Info("failed to match current size and requested size", "current", changedLV.Status.CurrentSize.Value(), "requested", changedLV.Spec.Size.Value())
-			continue
+			return false, nil
 		}
 
-		return nil
-	}
+		if changedLV.Status.CurrentSize.Cmp(*request) != 0 {
+			logger.Info("waiting for update of 'status.currentSize' to be updated to signal successful expansion",
+				"name", lv.Name,
+				"status.currentSize", changedLV.Status.CurrentSize,
+				"spec.size", changedLV.Spec.Size,
+				"request", request,
+			)
+			return false, nil
+		}
+
+		logger.Info("LogicalVolume successfully expanded")
+		return true, nil
+	})
 }
 
 // GetVolume returns LogicalVolume by volume ID.
@@ -342,64 +307,92 @@ func (s *LogicalVolumeService) GetVolume(ctx context.Context, volumeID string) (
 
 // updateSpecSize updates .Spec.Size of LogicalVolume.
 func (s *LogicalVolumeService) updateSpecSize(ctx context.Context, volumeID string, size *resource.Quantity) error {
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(1 * time.Second):
-		}
-
-		lv, err := s.GetVolume(ctx, volumeID)
-		if err != nil {
-			return err
-		}
-
-		lv.Spec.Size = *size
-		if lv.Annotations == nil {
-			lv.Annotations = make(map[string]string)
-		}
-		lv.Annotations[topols.ResizeRequestedAtKey] = time.Now().UTC().String()
-
-		if err := s.writer.Update(ctx, lv); err != nil {
-			if apierrors.IsConflict(err) {
-				logger.Info("detect conflict when LogicalVolume spec update", "name", lv.Name)
-				continue
+	return wait.ExponentialBackoffWithContext(ctx,
+		retry.DefaultBackoff,
+		func(ctx context.Context) (bool, error) {
+			lv, err := s.GetVolume(ctx, volumeID)
+			if err != nil {
+				return false, err
 			}
-			logger.Error(err, "failed to update LogicalVolume spec", "name", lv.Name)
-			return err
-		}
+			lv.Spec.Size = *size
+			if lv.Annotations == nil {
+				lv.Annotations = make(map[string]string)
+			}
+			lv.Annotations[topols.ResizeRequestedAtKey] = time.Now().UTC().String()
 
-		return nil
-	}
+			if err := s.writer.Update(ctx, lv); err != nil {
+				if apierrors.IsConflict(err) {
+					logger.Info("detected conflict when trying to update LogicalVolume spec", "name", lv.Name)
+					return false, nil
+				} else {
+					logger.Error(err, "failed to update LogicalVolume spec", "name", lv.Name)
+					return false, err
+				}
+			}
+			return true, nil
+		})
 }
 
-// waitForStatusUpdate waits for logical volume creation/failure/timeout, whichever comes first.
-func (s *LogicalVolumeService) waitForStatusUpdate(ctx context.Context, name string) (string, error) {
-	for {
-		logger.Info("waiting for setting 'status.volumeID'", "name", name)
-		select {
-		case <-ctx.Done():
-			return "", ctx.Err()
-		case <-time.After(100 * time.Millisecond):
+// createAndWait creates a new LogicalVolume resource and wait until it is fully provisioned
+func (s *LogicalVolumeService) createAndWait(ctx context.Context, lv *topolsv1.LogicalVolume) (*topolsv1.LogicalVolume, error) {
+	if err := s.create(ctx, lv); err != nil {
+		return nil, err
+	}
+
+	return s.waitForVolumeProvisioning(ctx, lv.Name)
+}
+
+// create creates a new LogicalVolume or verifies compatibility with existing one
+func (s *LogicalVolumeService) create(ctx context.Context, lv *topolsv1.LogicalVolume) error {
+	existingLV := new(topolsv1.LogicalVolume)
+	err := s.getter.Get(ctx, client.ObjectKey{Name: lv.Name}, existingLV)
+	if err != nil {
+		if !apierrors.IsNotFound(err) {
+			return err
 		}
 
-		var newLV topolsv1.LogicalVolume
-		err := s.getter.Get(ctx, client.ObjectKey{Name: name}, &newLV)
-		if err != nil {
-			logger.Error(err, "failed to get LogicalVolume", "name", name)
-			return "", err
+		if err := s.writer.Create(ctx, lv); err != nil {
+			return err
 		}
+		logger.Info("created LogicalVolume CR", "name", lv.Name, "source", lv.Spec.Source, "accessType", lv.Spec.AccessType)
+		return nil
+	}
+
+	if !existingLV.IsCompatibleWith(lv) {
+		return status.Error(codes.AlreadyExists, "Incompatible LogicalVolume already exists")
+	}
+
+	return nil
+}
+
+// waitForVolumeProvisioning waits until the volume is fully provisioned or fails
+func (s *LogicalVolumeService) waitForVolumeProvisioning(ctx context.Context, lvName string) (*topolsv1.LogicalVolume, error) {
+	var newLV topolsv1.LogicalVolume
+	return &newLV, wait.Backoff{
+		Duration: 1 * time.Second,
+		Factor:   2,
+		Jitter:   0.1,
+		Steps:    math.MaxInt,
+		Cap:      10 * time.Second,
+	}.DelayFunc().Until(ctx, true, false, func(ctx context.Context) (bool, error) {
+		if err := s.getter.Get(ctx, client.ObjectKey{Name: lvName}, &newLV); err != nil {
+			logger.Error(err, "failed to get LogicalVolume", "name", lvName)
+			return false, err
+		}
+
 		if newLV.Status.VolumeID != "" {
-			logger.Info("end k8s.LogicalVolume", "volume_id", newLV.Status.VolumeID)
-			return newLV.Status.VolumeID, nil
+			logger.Info("LogicalVolume successfully provisioned", "volume_id", newLV.Status.VolumeID)
+			return true, nil
 		}
+
 		if newLV.Status.Code != codes.OK {
-			err := s.writer.Delete(ctx, &newLV)
-			if err != nil {
+			if err := s.writer.Delete(ctx, &newLV); err != nil {
 				// log this error but do not return this error, because newLV.Status.Message is more important
 				logger.Error(err, "failed to delete LogicalVolume")
 			}
-			return "", status.Error(newLV.Status.Code, newLV.Status.Message)
+			return false, status.Error(newLV.Status.Code, newLV.Status.Message)
 		}
-	}
+
+		return false, nil
+	})
 }

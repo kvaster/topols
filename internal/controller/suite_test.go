@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -46,10 +47,14 @@ func createNamespace() string {
 
 func TestAPIs(t *testing.T) {
 	RegisterFailHandler(Fail)
+
 	SetDefaultEventuallyTimeout(time.Minute)
+	EnforceDefaultTimeoutsWhenUsingContexts()
+
 	suiteConfig, _ := GinkgoConfiguration()
 	suiteConfig.Timeout = 10 * time.Minute
 	suiteConfig.FailFast = true
+
 	RunSpecs(t, "Controller Suite", suiteConfig)
 }
 
@@ -58,8 +63,11 @@ var _ = BeforeSuite(func() {
 
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{
-		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "config", "crd", "bases")},
-		ErrorIfCRDPathMissing: true,
+		CRDDirectoryPaths:           []string{filepath.Join("..", "..", "config", "crd", "bases")},
+		ErrorIfCRDPathMissing:       true,
+		DownloadBinaryAssets:        true,
+		DownloadBinaryAssetsVersion: "v" + os.Getenv("ENVTEST_KUBERNETES_VERSION"),
+		BinaryAssetsDirectory:       os.Getenv("ENVTEST_ASSETS_DIR"),
 	}
 
 	var err error

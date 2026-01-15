@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/kvaster/topols"
+	"github.com/kvaster/topols/internal/profiling"
 	"github.com/kvaster/topols/internal/scheduler"
 	"github.com/spf13/cobra"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -31,6 +32,8 @@ type Config struct {
 	ListenAddr string `json:"listen"`
 	// Weights is a mapping between device-class names and their weights, default weight is 1.
 	Weights map[string]float64 `json:"weights"`
+	// ProfilingBindAddress is the bind address to expose pprof profiling. If empty, profiling is disabled.
+	ProfilingBindAddress string `json:"profiling-bind-address"`
 }
 
 var config = &Config{
@@ -100,10 +103,25 @@ func subMain(parentCtx context.Context) error {
 	ctx, stop := signal.NotifyContext(parentCtx, os.Interrupt, syscall.SIGTERM)
 	defer stop() // stop() should be called before wg.Wait() to stop the goroutine correctly.
 
+	var pprofServer *http.Server
+	if config.ProfilingBindAddress != "" {
+		pprofServer = profiling.NewProfilingServer(config.ProfilingBindAddress)
+		go func() {
+			if err := pprofServer.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+				logger.Error(err, "pprof server error")
+			}
+		}()
+	}
+
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		<-ctx.Done()
+		if pprofServer != nil {
+			if err := pprofServer.Shutdown(parentCtx); err != nil {
+				logger.Error(err, "failed to shutdown pprof server")
+			}
+		}
 		if err := serv.Shutdown(parentCtx); err != nil {
 			logger.Error(err, "failed to shutdown gracefully")
 		}

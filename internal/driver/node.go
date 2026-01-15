@@ -153,10 +153,8 @@ func (s *nodeServerNoLocked) NodePublishVolume(ctx context.Context, req *csi.Nod
 }
 
 func makeMountOptions(readOnly bool, mountOption *csi.VolumeCapability_MountVolume) ([]string, error) {
-	var mountOptions []string
-	if readOnly {
-		mountOptions = append(mountOptions, "ro")
-	}
+	mountOptions := make([]string, 0, len(mountOption.MountFlags)+2)
+	mountOptions = append(mountOptions, toReadOnlyMountOption(readOnly)...)
 
 	for _, f := range mountOption.MountFlags {
 		if f == "rw" && readOnly {
@@ -166,6 +164,10 @@ func makeMountOptions(readOnly bool, mountOption *csi.VolumeCapability_MountVolu
 	}
 
 	return mountOptions, nil
+}
+
+func toReadOnlyMountOption(readOnly bool) []string {
+	return map[bool][]string{true: {"ro"}, false: nil}[readOnly]
 }
 
 func (s *nodeServerNoLocked) nodePublishFilesystemVolume(req *csi.NodePublishVolumeRequest, lv *lsm.LogicalVolume) error {
@@ -181,7 +183,7 @@ func (s *nodeServerNoLocked) nodePublishFilesystemVolume(req *csi.NodePublishVol
 	sourcePath := s.client.GetPath(lv)
 	targetPath := req.GetTargetPath()
 
-	isMnt, err := s.mounter.IsMountPoint(targetPath)
+	mounted, err := s.mounter.IsMountPoint(targetPath)
 
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -194,13 +196,13 @@ func (s *nodeServerNoLocked) nodePublishFilesystemVolume(req *csi.NodePublishVol
 				"target_path", targetPath,
 			)
 
-			isMnt = false
+			mounted = false
 		} else {
 			return status.Errorf(codes.Internal, "target path check failed: volume=%s, target=%s, error=%v", volumeId, targetPath, err)
 		}
 	}
 
-	if isMnt {
+	if mounted {
 		nodeLogger.Info("NodePublishVolume(fs) target path is already mounted",
 			"volume_id", volumeId,
 			"target_path", targetPath,
@@ -232,7 +234,7 @@ func (s *nodeServerNoLocked) findVolumeByID(volumes []*lsm.LogicalVolume, name s
 	return nil
 }
 
-func (s *nodeServerNoLocked) getLvFromContext(ctx context.Context, deviceClass, volumeID string) (*lsm.LogicalVolume, error) {
+func (s *nodeServerNoLocked) getLvFromContext(_ context.Context, deviceClass, volumeID string) (*lsm.LogicalVolume, error) {
 	listResp, err := s.client.GetLVList(deviceClass)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to list LV: %v", err)
@@ -276,28 +278,8 @@ func (s *nodeServerNoLocked) nodeUnpublishFilesystemVolume(req *csi.NodeUnpublis
 	targetPath := req.GetTargetPath()
 	volumeId := req.GetVolumeId()
 
-	if isMnt, err := s.mounter.IsMountPoint(targetPath); err != nil {
-		if os.IsNotExist(err) {
-			nodeLogger.Info("NodeUnpublishVolume(fs) target path does not exists",
-				"volume_id", volumeId,
-				"target_path", targetPath,
-			)
-		} else {
-			return status.Errorf(codes.Internal, "target path check failed: volume=%s, target=%s, error=%v", volumeId, targetPath, err)
-		}
-	} else if isMnt {
-		if err := s.mounter.Unmount(targetPath); err != nil {
-			return status.Errorf(codes.Internal, "target path unmount failed: volume=%s, target=%s, error=%v", volumeId, targetPath, err)
-		}
-
-		nodeLogger.Info("NodeUnpublishVolume(fs) target path unmounted",
-			"volume_id", volumeId,
-			"target_path", targetPath,
-		)
-
-		if err := os.Remove(targetPath); err != nil {
-			return status.Errorf(codes.Internal, "error removing target path: volume=%s, target=%s, error=%v", volumeId, targetPath, err)
-		}
+	if err := mountutil.CleanupMountPoint(targetPath, s.mounter, true); err != nil {
+		return status.Errorf(codes.Internal, "unmount failed for %s: error=%v", targetPath, err)
 	}
 
 	nodeLogger.Info("NodeUnpublishVolume(fs) is succeeded",
@@ -339,21 +321,27 @@ func (s *nodeServerNoLocked) NodeGetVolumeStats(ctx context.Context, req *csi.No
 		Available: int64(stats.TotalBytes - stats.UsedBytes),
 	}}
 
-	return &csi.NodeGetVolumeStatsResponse{Usage: usage}, nil
+	// client.VolumeStats will call `btrfs subvol show`
+	// and it already means that volume is healthy
+	volumeCondition := &csi.VolumeCondition{
+		Abnormal: false,
+		Message:  "Volume is healthy",
+	}
+
+	return &csi.NodeGetVolumeStatsResponse{Usage: usage, VolumeCondition: volumeCondition}, nil
 }
 
 func (s *nodeServerNoLocked) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolumeRequest) (*csi.NodeExpandVolumeResponse, error) {
-	volumeId := req.GetVolumeId()
+	volumeID := req.GetVolumeId()
 	volumePath := req.GetVolumePath()
-
-	nodeLogger.Info("NodeExpandVolume is called",
-		"volume_id", volumeId,
+	logger := nodeLogger.WithValues("volume_id", volumeID,
 		"volume_path", volumePath,
 		"required", req.GetCapacityRange().GetRequiredBytes(),
-		"limit", req.GetCapacityRange().GetLimitBytes(),
-	)
+		"limit", req.GetCapacityRange().GetLimitBytes())
 
-	if len(volumeId) == 0 {
+	logger.Info("NodeExpandVolume is called")
+
+	if len(volumeID) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "no volume_id is provided")
 	}
 	if len(volumePath) == 0 {
@@ -362,12 +350,16 @@ func (s *nodeServerNoLocked) NodeExpandVolume(ctx context.Context, req *csi.Node
 
 	// We need to check the capacity range but don't use the converted value
 	// because the filesystem can be resized without the requested size.
-	_, err := convertRequestCapacity(req.GetCapacityRange().GetRequiredBytes(), req.GetCapacityRange().GetLimitBytes())
+	_, err := convertRequestCapacityBytes(
+		req.GetCapacityRange().GetRequiredBytes(),
+		req.GetCapacityRange().GetLimitBytes(),
+	)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	// Filesystem should be already expanded by qouta change in logicalvolume controller
+	// Filesystem should be already expanded by quota change in logicalvolume controller
+	logger.Info("NodeExpandVolume(fs) is succeeded")
 
 	// `capacity_bytes` in NodeExpandVolumeResponse is defined as OPTIONAL.
 	// If this field needs to be filled, the value should be equal to `.status.currentSize` of the corresponding
@@ -380,6 +372,7 @@ func (s *nodeServerNoLocked) NodeGetCapabilities(context.Context, *csi.NodeGetCa
 	capabilities := []csi.NodeServiceCapability_RPC_Type{
 		csi.NodeServiceCapability_RPC_GET_VOLUME_STATS,
 		csi.NodeServiceCapability_RPC_EXPAND_VOLUME,
+		csi.NodeServiceCapability_RPC_VOLUME_CONDITION,
 	}
 
 	csiCaps := make([]*csi.NodeServiceCapability, len(capabilities))

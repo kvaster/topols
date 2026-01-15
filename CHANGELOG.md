@@ -7,6 +7,14 @@ This file itself is based on [Keep a CHANGELOG](https://keepachangelog.com/en/0.
 
 ## [Unreleased]
 
+## [0.39.0] - 2026-01-15
+
+Sync with topolvm at commit: 7f23f125961b4528a33570ee1027046f7aded197
+
+## [0.27.1] - 2024-03-19
+
+Sync with topolvm at commit: ad31f6d56927bc8b89dff3792fbf43b4b39878af
+
 ## [0.26.0] - 2024-03-18
 
 Sync with topolvm at commit: 44099e06250795cce5c6c18ac9b577fb04d01e29

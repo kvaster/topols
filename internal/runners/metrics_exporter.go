@@ -43,7 +43,6 @@ func NewMetricsExporter(client client.Client, lsmc lsm.Client, nodeName string) 
 		Help:        "local storage available bytes under topols management",
 		ConstLabels: prometheus.Labels{"node": nodeName},
 	}, []string{"device_class"})
-	metrics.Registry.MustRegister(availableBytes)
 
 	sizeBytes := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace:   metricsNamespace,
@@ -52,7 +51,6 @@ func NewMetricsExporter(client client.Client, lsmc lsm.Client, nodeName string) 
 		Help:        "local storage size bytes under topols management",
 		ConstLabels: prometheus.Labels{"node": nodeName},
 	}, []string{"device_class"})
-	metrics.Registry.MustRegister(sizeBytes)
 
 	return &metricsExporter{
 		client:         client,
@@ -63,13 +61,40 @@ func NewMetricsExporter(client client.Client, lsmc lsm.Client, nodeName string) 
 	}
 }
 
+func (m *metricsExporter) getCollectors() []prometheus.Collector {
+	return []prometheus.Collector{
+		m.availableBytes,
+		m.sizeBytes,
+	}
+}
+
+func (m *metricsExporter) registerAll() error {
+	for _, c := range m.getCollectors() {
+		if err := metrics.Registry.Register(c); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *metricsExporter) unregisterAll() {
+	for _, c := range m.getCollectors() {
+		metrics.Registry.Unregister(c)
+	}
+}
+
 // Start implements controller-runtime's manager.Runnable.
 func (m *metricsExporter) Start(ctx context.Context) error {
+	if err := m.registerAll(); err != nil {
+		return err
+	}
+
 	metricsCh := make(chan *lsm.DeviceClassStats)
 	go func() {
 		for {
 			select {
 			case <-ctx.Done():
+				m.unregisterAll()
 				return
 			case met := <-metricsCh:
 				m.availableBytes.WithLabelValues(met.DeviceClass).Set(float64(met.TotalBytes - met.UsedBytes))

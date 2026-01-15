@@ -89,8 +89,6 @@ scheduler:
   # scheduler.tolerations -- Specify tolerations on the Deployment or DaemonSet.
   ## ref: https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/
   tolerations:
-    - key: CriticalAddonsOnly
-      operator: Exists
     - key: node-role.kubernetes.io/control-plane
       effect: NoSchedule
 
@@ -99,7 +97,7 @@ scheduler:
   nodeSelector: {}
 
   # scheduler.priorityClassName -- Specify priorityClassName on the Deployment or DaemonSet.
-  priorityClassName:
+  priorityClassName: system-cluster-critical
 
   # scheduler.schedulerOptions -- Tune the Node scoring.
   # ref: https://github.com/kvaster/topols/blob/master/deploy/README.md
@@ -107,6 +105,14 @@ scheduler:
   #  divisors:
   #    ssd: 1
   #    hdd: 10
+
+  # scheduler.additionalContainers -- Define extra containers to add to the Daemonset.
+  # Please ensure not to use any existing container names.
+  additionalContainers: []
+
+  profiling:
+    # scheduler.profiling.bindAddress -- Enables pprof profiling server. If empty, profiling is disabled.
+    bindAddress: ""
 
   options:
     listen:
@@ -128,6 +134,10 @@ node:
 
   # node.args -- Arguments to be passed to the command.
   args: []
+
+  # node.podSecurityContext -- Pod securityContext.
+  ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
+  podSecurityContext: {}
 
   # node.securityContext. -- Container securityContext.
   ## ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
@@ -252,8 +262,16 @@ node:
   # node.labels -- Additional labels to be added to the Daemonset.
   labels: {}
 
+  profiling:
+    # node.profiling.bindAddress -- Enables pprof profiling server. if empty profiling is disabled.
+    bindAddress: ""
+
   # node.initContainers -- Additional initContainers for the node service.
   initContainers: []
+
+  # node.additionalContainers -- Define extra containers to add to the Daemonset.
+  # Please ensure not to use any existing container names.
+  additionalContainers: []
 
 # CSI controller service
 controller:
@@ -370,8 +388,16 @@ controller:
   # controller.labels -- Additional labels to be added to the Deployment.
   labels: {}
 
+  profiling:
+    # controller.profiling.bindAddress -- Enables pprof profiling server. If empty, profiling is disabled.
+    bindAddress: ""
+
   # controller.initContainers -- Additional initContainers for the controller service.
   initContainers: []
+
+  # controller.additionalContainers -- Define extra containers to add to the Deployment.
+  # Please ensure not to use any existing container names.
+  additionalContainers: []
 
 resources:
   # resources.topols_node -- Specify resources.
@@ -525,10 +551,28 @@ webhook:
     # name: webhook-issuer
   podMutatingWebhook:
     # webhook.podMutatingWebhook.enabled -- Enable Pod MutatingWebhook.
-    enabled: true
+    enabled: false
+    # webhook.podMutatingWebhook.objectSelector -- Labels required on Pods for webhook action.
+    # **WARNING**: Modifying objectSelector can affect TopoLS Pod scheduling. Proceed with caution.
+    ## ref: https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/#matching-requests-objectselector
+    objectSelector: {}
+      # webhook: topols
+    # webhook.podMutatingWebhook.ignoreNamespaces -- Namespaces to be ignored by the Pod MutatingWebhook.
+    ignoreNamespaces:
+      - kube-system
+      - topolvm-system
   pvcMutatingWebhook:
     # webhook.pvcMutatingWebhook.enabled -- Enable PVC MutatingWebhook.
     enabled: true
+    # webhook.pvcMutatingWebhook.objectSelector -- Labels required on PVCs for webhook action.
+    # **WARNING**: Modifying objectSelector can affect TopoLS PVC management. Proceed with caution.
+    ## ref: https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/#matching-requests-objectselector
+    objectSelector: {}
+      # webhook: topols
+    # webhook.pvcMutatingWebhook.ignoreNamespaces -- Namespaces to be ignored by the PVC MutatingWebhook.
+    ignoreNamespaces:
+      - kube-system
+      - topolvm-system
 
 # Container Security Context
 # ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/
@@ -554,4 +598,3 @@ priorityClass:
 snapshot:
   # snapshot.enabled -- Turn on the snapshot feature.
   enabled: true
-

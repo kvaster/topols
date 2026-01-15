@@ -51,6 +51,16 @@ func (c *wrappedReader) List(ctx context.Context, list client.ObjectList, opts .
 	return c.client.List(ctx, list, opts...)
 }
 
+func (c *wrappedClient) Apply(ctx context.Context, obj runtime.ApplyConfiguration, opts ...client.ApplyOption) error {
+	// We're not using Apply currently, so we can safely return an error here.
+	// In addition, as of controller-runtime v0.22.4, we can't implement Apply
+	// completely. To do so, we need to detect whether obj is
+	// client.unstructuredApplyConfiguration, which is returned by
+	// client.ApplyConfigurationFromUnstructured, and modify its GVK. However,
+	// this type isn't exported in client package, so we can't do that.
+	return fmt.Errorf("wrappedClient.Apply is not implemented")
+}
+
 type wrappedClient struct {
 	reader client.Reader
 	client client.Client

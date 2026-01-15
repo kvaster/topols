@@ -37,6 +37,9 @@ const NodeFinalizer = "topols.kvaster.com/node"
 // PVCFinalizer is the name of PVC finalizer of TopoLS
 const PVCFinalizer = "topols.kvaster.com/pvc"
 
+// LastResizeFSRequestedAtKey is the annotation key that represents the timestamp of the resizefs request to kubelet.
+const LastResizeFSRequestedAtKey = "topols.kvaster.com/last-resizefs-requested-at"
+
 // DefaultCSISocket is the default path of the CSI socket file.
 const DefaultCSISocket = "/run/topols/csi-topols.sock"
 

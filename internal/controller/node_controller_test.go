@@ -9,6 +9,7 @@ import (
 	"github.com/kvaster/topols"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"sigs.k8s.io/controller-runtime/pkg/config"
 
 	topolsv1 "github.com/kvaster/topols/api/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -26,8 +27,12 @@ var _ = Describe("NodeController controller", func() {
 	errCh := make(chan error)
 
 	startReconciler := func(skipNodeFinalize bool) {
+		skipNameValidation := true
 		mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 			Scheme: scheme,
+			Controller: config.Controller{
+				SkipNameValidation: &skipNameValidation,
+			},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
@@ -52,7 +57,7 @@ var _ = Describe("NodeController controller", func() {
 		corev1.Node, corev1.PersistentVolumeClaim, topolsv1.LogicalVolume) {
 		node := corev1.Node{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "node" + suffix,
+				Name: nodeNameBase + suffix,
 				Finalizers: []string{
 					topols.NodeFinalizer,
 				},
@@ -63,7 +68,7 @@ var _ = Describe("NodeController controller", func() {
 
 		sc := storegev1.StorageClass{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "sc" + suffix,
+				Name: storageClassNameBase + suffix,
 			},
 			Provisioner: topols.PluginName,
 		}
@@ -73,7 +78,7 @@ var _ = Describe("NodeController controller", func() {
 		ns := createNamespace()
 		pvc := corev1.PersistentVolumeClaim{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "pvc" + suffix,
+				Name:      pvcNameBase + suffix,
 				Namespace: ns,
 				Annotations: map[string]string{
 					AnnSelectedNode: node.Name,
@@ -96,7 +101,7 @@ var _ = Describe("NodeController controller", func() {
 
 		lv := topolsv1.LogicalVolume{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "lv" + suffix,
+				Name: logicalVolumeNameBase + suffix,
 			},
 			Spec: topolsv1.LogicalVolumeSpec{
 				NodeName: node.Name,

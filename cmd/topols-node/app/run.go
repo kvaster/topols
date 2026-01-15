@@ -9,10 +9,10 @@ import (
 	"github.com/kvaster/topols"
 	topolsv1 "github.com/kvaster/topols/api/v1"
 	clientwrapper "github.com/kvaster/topols/internal/client"
-	"github.com/kvaster/topols/internal/controller"
-	"github.com/kvaster/topols/internal/driver"
 	"github.com/kvaster/topols/internal/lsm/btrfs"
 	"github.com/kvaster/topols/internal/runners"
+	"github.com/kvaster/topols/pkg/controller"
+	"github.com/kvaster/topols/pkg/driver"
 	"github.com/spf13/viper"
 	"google.golang.org/grpc"
 	storagev1 "k8s.io/api/storage/v1"
@@ -57,9 +57,10 @@ func subMain() error {
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:         scheme,
-		Metrics:        metricsServerOptions,
-		LeaderElection: false,
+		Scheme:           scheme,
+		Metrics:          metricsServerOptions,
+		LeaderElection:   false,
+		PprofBindAddress: config.profilingBindAddress,
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
@@ -77,8 +78,7 @@ func subMain() error {
 		return err
 	}
 
-	lvcontroller := controller.NewLogicalVolumeReconciler(reader, lsmc, nodename)
-	if err := lvcontroller.SetupWithManager(mgr); err != nil {
+	if err := controller.SetupLogicalVolumeReconcilerWithServices(mgr, reader, lsmc, nodename); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "LogicalVolume")
 		return err
 	}
@@ -131,7 +131,12 @@ func checkFunc(r client.Reader) func() error {
 	}
 }
 
-func ErrorLoggingInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
+func ErrorLoggingInterceptor(
+	ctx context.Context,
+	req interface{},
+	info *grpc.UnaryServerInfo,
+	handler grpc.UnaryHandler,
+) (resp interface{}, err error) {
 	resp, err = handler(ctx, req)
 	if err != nil {
 		ctrl.Log.Error(err, "error on grpc call", "method", info.FullMethod)

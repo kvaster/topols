@@ -28,6 +28,7 @@ var config struct {
 	leaderElectionRetryPeriod   time.Duration
 	skipNodeFinalize            bool
 	zapOpts                     zap.Options
+	profilingBindAddress        string
 }
 
 var rootCmd = &cobra.Command{
@@ -52,6 +53,7 @@ func Execute() {
 	}
 }
 
+//nolint:lll
 func init() {
 	fs := rootCmd.Flags()
 	fs.StringVar(&config.csiSocket, "csi-socket", topols.DefaultCSISocket, "UNIX domain socket filename for CSI")
@@ -68,10 +70,13 @@ func init() {
 	fs.DurationVar(&config.leaderElectionRenewDeadline, "leader-election-renew-deadline", 10*time.Second, "Duration that the acting controlplane will retry refreshing leadership before giving up. This is measured against time of last observed ack.")
 	fs.DurationVar(&config.leaderElectionRetryPeriod, "leader-election-retry-period", 2*time.Second, "Duration the LeaderElector clients should wait between tries of actions.")
 	fs.BoolVar(&config.skipNodeFinalize, "skip-node-finalize", false, "skips automatic cleanup of PhysicalVolumeClaims when a Node is deleted")
+	fs.StringVar(&config.profilingBindAddress, "profiling-bind-address", "", "Bind pprof profiling to the given network address. If empty, profiling is disabled.")
 
-	goflags := flag.NewFlagSet("klog", flag.ExitOnError)
-	klog.InitFlags(goflags)
-	config.zapOpts.BindFlags(goflags)
+	klogFlags := flag.NewFlagSet("klog", flag.ExitOnError)
+	klog.InitFlags(klogFlags)
+	fs.AddGoFlagSet(klogFlags)
 
-	fs.AddGoFlagSet(goflags)
+	zapFlags := flag.NewFlagSet("zap", flag.ExitOnError)
+	config.zapOpts.BindFlags(zapFlags)
+	fs.AddGoFlagSet(zapFlags)
 }

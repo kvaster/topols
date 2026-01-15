@@ -29,7 +29,7 @@ var _ = Describe("client", func() {
 			cm := &corev1.ConfigMap{}
 			cm.Name = configmapName
 			cm.Namespace = configmapNamespace
-			k8sDelegatedClient.Delete(testCtx, cm)
+			_ = k8sDelegatedClient.Delete(testCtx, cm)
 		})
 
 		Context("wrappedReader", func() {

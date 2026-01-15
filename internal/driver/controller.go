@@ -21,6 +21,13 @@ import (
 
 var ctrlLogger = ctrl.Log.WithName("driver").WithName("controller")
 
+var (
+	ErrNoNegativeRequestBytes = errors.New("required capacity must not be negative")
+	ErrNoNegativeLimitBytes   = errors.New("capacity limit must not be negative")
+	ErrRequestedExceedsLimit  = errors.New("requested capacity exceeds limit capacity")
+	ErrResultingRequestIsZero = errors.New("requested capacity is 0")
+)
+
 // NewControllerServer returns a new ControllerServer.
 func NewControllerServer(mgr manager.Manager) (csi.ControllerServer, error) {
 	lvService, err := k8s.NewLogicalVolumeService(mgr)
@@ -101,6 +108,28 @@ func (s *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.
 	return s.server.ControllerExpandVolume(ctx, req)
 }
 
+func isRequirementsContaining(requirements *csi.TopologyRequirement, node string) bool {
+	for _, topo := range append(requirements.Preferred, requirements.Requisite...) {
+		if v, ok := topo.GetSegments()[topols.TopologyNodeKey]; ok {
+			if v == node {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func findNodeHavingTopologyNodeKey(requirements *csi.TopologyRequirement) string {
+	for _, topo := range append(requirements.Preferred, requirements.Requisite...) {
+		if v, ok := topo.GetSegments()[topols.TopologyNodeKey]; ok {
+			return v
+		}
+	}
+
+	return ""
+}
+
 // controllerServerNoLocked implements csi.ControllerServer.
 // It does not take any lock, gRPC calls may be interleaved.
 // Therefore, must not use it directly.
@@ -140,6 +169,9 @@ func (s controllerServerNoLocked) CreateVolume(ctx context.Context, req *csi.Cre
 		return nil, status.Error(codes.InvalidArgument, "no volume capabilities are provided")
 	}
 
+	required := req.GetCapacityRange().GetRequiredBytes()
+	limit := req.GetCapacityRange().GetLimitBytes()
+
 	// check required volume capabilities
 	for _, capability := range capabilities {
 		if block := capability.GetBlock(); block != nil {
@@ -165,7 +197,7 @@ func (s controllerServerNoLocked) CreateVolume(ctx context.Context, req *csi.Cre
 		}
 	}
 
-	requestBytes, err := convertRequestCapacity(req.GetCapacityRange().GetRequiredBytes(), req.GetCapacityRange().GetLimitBytes())
+	requestCapacityBytes, err := convertRequestCapacityBytes(required, limit)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -178,9 +210,8 @@ func (s controllerServerNoLocked) CreateVolume(ctx context.Context, req *csi.Cre
 			return nil, err
 		}
 		// check if the volume has the same size as the source volume.
-		// TODO (Yuggupta27): Allow user to create a volume with more size than that of the source volume.
 		sourceSizeBytes := sourceVol.Spec.Size.Value()
-		if requestBytes < sourceSizeBytes {
+		if requestCapacityBytes < sourceSizeBytes {
 			return nil, status.Error(codes.OutOfRange, "requested size is smaller than the size of the source")
 		}
 		// If a volume has a source, it has to provisioned on the same node and device class as the source volume.
@@ -198,38 +229,12 @@ func (s controllerServerNoLocked) CreateVolume(ctx context.Context, req *csi.Cre
 	requirements := req.GetAccessibilityRequirements()
 
 	if source != nil {
-		if requirements == nil {
-			// In CSI spec, controllers are required that they response OK even if accessibility_requirements field is nil.
-			// So we must create volume, and must not return error response in this case.
-			// - https://github.com/container-storage-interface/spec/blob/release-1.1/spec.md#createvolume
-			// - https://github.com/kubernetes-csi/csi-test/blob/6738ab2206eac88874f0a3ede59b40f680f59f43/pkg/sanity/controller.go#L404-L428
-			ctrlLogger.Info("decide node because accessibility_requirements not found")
-			// the snapshot must be created on the same node as the source
-			node = sourceVol.Spec.NodeName
-		} else {
-			sourceNode := sourceVol.Spec.NodeName
-			for _, topo := range requirements.Preferred {
-				if v, ok := topo.GetSegments()[topols.TopologyNodeKey]; ok {
-					if v == sourceNode {
-						node = v
-						break
-					}
-				}
-			}
-			if node == "" {
-				for _, topo := range requirements.Requisite {
-					if v, ok := topo.GetSegments()[topols.TopologyNodeKey]; ok {
-						if v == sourceNode {
-							node = v
-							break
-						}
-					}
-				}
-			}
-			if node == "" {
-				return nil, status.Errorf(codes.InvalidArgument, "cannot find source volume's node '%s' in accessibility_requirements", sourceNode)
-			}
+		// the snapshot must be created on the same node as the source
+		node = sourceVol.Spec.NodeName
+		if requirements != nil && !isRequirementsContaining(requirements, node) {
+			return nil, status.Errorf(codes.InvalidArgument, "cannot find source volume's node '%s' in accessibility_requirements", node)
 		}
+
 	} else {
 		if requirements == nil {
 			// In CSI spec, controllers are required that they response OK even if accessibility_requirements field is nil.
@@ -245,25 +250,12 @@ func (s controllerServerNoLocked) CreateVolume(ctx context.Context, req *csi.Cre
 			if nodeName == "" {
 				return nil, status.Error(codes.Internal, "can not find any node")
 			}
-			if capacity < requestBytes {
+			if capacity < requestCapacityBytes {
 				return nil, status.Errorf(codes.ResourceExhausted, "can not find enough volume space %d", capacity)
 			}
 			node = nodeName
 		} else {
-			for _, topo := range requirements.Preferred {
-				if v, ok := topo.GetSegments()[topols.TopologyNodeKey]; ok {
-					node = v
-					break
-				}
-			}
-			if node == "" {
-				for _, topo := range requirements.Requisite {
-					if v, ok := topo.GetSegments()[topols.TopologyNodeKey]; ok {
-						node = v
-						break
-					}
-				}
-			}
+			node = findNodeHavingTopologyNodeKey(requirements)
 			if node == "" {
 				return nil, status.Errorf(codes.InvalidArgument, "cannot find key '%s' in accessibility_requirements", topols.TopologyNodeKey)
 			}
@@ -274,10 +266,9 @@ func (s controllerServerNoLocked) CreateVolume(ctx context.Context, req *csi.Cre
 	if name == "" {
 		return nil, status.Error(codes.InvalidArgument, "invalid name")
 	}
-
 	name = strings.ToLower(name)
 
-	volumeID, err := s.lvService.CreateVolume(ctx, node, deviceClass, noCow, name, sourceName, requestBytes)
+	volume, err := s.lvService.CreateVolume(ctx, node, deviceClass, noCow, name, sourceName, requestCapacityBytes)
 	if err != nil {
 		_, ok := status.FromError(err)
 		if !ok {
@@ -288,8 +279,8 @@ func (s controllerServerNoLocked) CreateVolume(ctx context.Context, req *csi.Cre
 
 	return &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
-			CapacityBytes: requestBytes,
-			VolumeId:      volumeID,
+			CapacityBytes: volume.Status.CurrentSize.Value(),
+			VolumeId:      volume.Status.VolumeID,
 			ContentSource: source,
 			AccessibleTopology: []*csi.Topology{
 				{
@@ -373,9 +364,9 @@ func (s controllerServerNoLocked) CreateSnapshot(ctx context.Context, req *csi.C
 	// the snapshots are required to be created in the same node and device class as the source volume.
 	node := sourceVol.Spec.NodeName
 	deviceClass := sourceVol.Spec.DeviceClass
-	size := sourceVol.Spec.Size
 	sourceVolName := sourceVol.Spec.Name
-	snapshotID, err := s.lvService.CreateSnapshot(ctx, node, deviceClass, sourceVolName, name, accessType, size)
+	currentSize := sourceVol.Status.CurrentSize
+	snapshot, err := s.lvService.CreateSnapshot(ctx, node, deviceClass, sourceVolName, name, accessType, *currentSize)
 	if err != nil {
 		_, ok := status.FromError(err)
 		if !ok {
@@ -386,9 +377,9 @@ func (s controllerServerNoLocked) CreateSnapshot(ctx context.Context, req *csi.C
 
 	return &csi.CreateSnapshotResponse{
 		Snapshot: &csi.Snapshot{
-			SnapshotId:     snapshotID,
+			SizeBytes:      snapshot.Status.CurrentSize.Value(),
+			SnapshotId:     snapshot.Status.VolumeID,
 			SourceVolumeId: sourceVolID,
-			SizeBytes:      sourceVol.Spec.Size.Value(),
 			CreationTime:   snapTimeStamp,
 			ReadyToUse:     true,
 		},
@@ -417,18 +408,16 @@ func (s controllerServerNoLocked) DeleteSnapshot(ctx context.Context, req *csi.D
 	return &csi.DeleteSnapshotResponse{}, nil
 }
 
-func convertRequestCapacity(requestBytes, limitBytes int64) (int64, error) {
+func convertRequestCapacityBytes(requestBytes, limitBytes int64) (int64, error) {
 	if requestBytes < 0 {
-		return 0, errors.New("required capacity must not be negative")
+		return 0, ErrNoNegativeRequestBytes
 	}
 	if limitBytes < 0 {
-		return 0, errors.New("capacity limit must not be negative")
+		return 0, ErrNoNegativeLimitBytes
 	}
 
 	if limitBytes != 0 && requestBytes > limitBytes {
-		return 0, fmt.Errorf(
-			"requested capacity exceeds limit capacity: request=%d limit=%d", requestBytes, limitBytes,
-		)
+		return 0, fmt.Errorf("%w: request=%d limit=%d", ErrRequestedExceedsLimit, requestBytes, limitBytes)
 	}
 
 	if requestBytes == 0 {
@@ -567,11 +556,12 @@ func (s controllerServerNoLocked) ControllerGetCapabilities(context.Context, *cs
 
 func (s controllerServerNoLocked) ControllerExpandVolume(ctx context.Context, req *csi.ControllerExpandVolumeRequest) (*csi.ControllerExpandVolumeResponse, error) {
 	volumeID := req.GetVolumeId()
-	ctrlLogger.Info("ControllerExpandVolume called",
-		"volumeID", volumeID,
+	logger := ctrlLogger.WithValues("volumeID", volumeID,
 		"required", req.GetCapacityRange().GetRequiredBytes(),
 		"limit", req.GetCapacityRange().GetLimitBytes(),
 		"num_secrets", len(req.GetSecrets()))
+
+	logger.Info("ControllerExpandVolume called")
 
 	if len(volumeID) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "volume id is nil")
@@ -585,7 +575,10 @@ func (s controllerServerNoLocked) ControllerExpandVolume(ctx context.Context, re
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	requestBytes, err := convertRequestCapacity(req.GetCapacityRange().GetRequiredBytes(), req.GetCapacityRange().GetLimitBytes())
+	requestCapacityBytes, err := convertRequestCapacityBytes(
+		req.GetCapacityRange().GetRequiredBytes(),
+		req.GetCapacityRange().GetLimitBytes(),
+	)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -596,12 +589,12 @@ func (s controllerServerNoLocked) ControllerExpandVolume(ctx context.Context, re
 		currentSize = &lv.Spec.Size
 	}
 
-	currentBytes := currentSize.Value()
-	if requestBytes <= currentBytes {
+	if requestCapacityBytes <= currentSize.Value() {
+		logger.Info("ControllerExpandVolume is waiting for node expansion to complete")
 		// "NodeExpansionRequired" is still true because it is unknown
 		// whether node expansion is completed or not.
 		return &csi.ControllerExpandVolumeResponse{
-			CapacityBytes:         currentBytes,
+			CapacityBytes:         currentSize.Value(),
 			NodeExpansionRequired: true,
 		}, nil
 	}
@@ -610,11 +603,12 @@ func (s controllerServerNoLocked) ControllerExpandVolume(ctx context.Context, re
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	if capacity < (requestBytes - currentBytes) {
+	if capacity < (requestCapacityBytes - currentSize.Value()) {
 		return nil, status.Error(codes.Internal, "not enough space")
 	}
 
-	err = s.lvService.ExpandVolume(ctx, volumeID, requestBytes)
+	logger.Info("ControllerExpandVolume triggering lvService.ExpandVolume")
+	changedLV, err := s.lvService.ExpandVolume(ctx, volumeID, requestCapacityBytes)
 	if err != nil {
 		_, ok := status.FromError(err)
 		if !ok {
@@ -622,8 +616,11 @@ func (s controllerServerNoLocked) ControllerExpandVolume(ctx context.Context, re
 		}
 		return nil, err
 	}
+
+	logger.Info("ControllerExpandVolume has succeeded")
+
 	return &csi.ControllerExpandVolumeResponse{
-		CapacityBytes:         requestBytes,
+		CapacityBytes:         changedLV.Status.CurrentSize.Value(),
 		NodeExpansionRequired: true,
 	}, nil
 }

@@ -15,12 +15,12 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/component: node
-      {{ include "topols.selectorLabels" . | nindent 6 }}
+      {{- include "topols.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
         app.kubernetes.io/component: node
-        {{ include "topols.selectorLabels" . | nindent 8 }}
+        {{- include "topols.selectorLabels" . | nindent 8 }}
         {{- with .Values.node.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -52,6 +52,9 @@ spec:
             - /topols-node
             - --csi-socket={{ .Values.node.kubeletWorkDirectory }}/plugins/topols.kvaster.com/node/csi-topols.sock
             - --pool-path={{ .Values.node.poolPath }}
+            {{- if .Values.node.profiling.bindAddress }}
+            - --profiling-bind-address={{ .Values.node.profiling.bindAddress }}
+            {{- end }}
           {{- with .Values.node.args }}
           args: {{ toYaml . | nindent 12 }}
           {{- end }}
@@ -173,6 +176,9 @@ spec:
             - name: node-plugin-dir
               mountPath: {{ .Values.node.kubeletWorkDirectory }}/plugins/topols.kvaster.com/node/
 
+        {{- with .Values.node.additionalContainers }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       volumes:
         {{- if .Values.node.volumes }}
         {{- toYaml .Values.node.volumes | nindent 8 }}
@@ -210,4 +216,7 @@ spec:
       {{- end }}
       {{- with .Values.node.affinity }}
       affinity: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.node.podSecurityContext }}
+      securityContext: {{ toYaml . | nindent 8 }}
       {{- end }}

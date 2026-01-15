@@ -11,6 +11,7 @@ This document describes how to install TopoLVM with advanced configurations.
   - [Run LVMd as a Embed Function in topolvm-node](#run-lvmd-as-a-embed-function-in-topolvm-node)
   - [Run LVMd as a Systemd Service](#run-lvmd-as-a-systemd-service)
   - [Migrate LVMd, which is running as a systemd service, to DaemonSet](#migrate-lvmd-which-is-running-as-a-systemd-service-to-daemonset)
+  - [Use different LVMd configurations on different nodes](#use-different-lvmd-configurations-on-different-nodes)
 - [Certificates](#certificates)
 - [Scheduling](#scheduling)
   - [Using Storage Capacity Tracking](#using-storage-capacity-tracking)
@@ -20,7 +21,7 @@ This document describes how to install TopoLVM with advanced configurations.
 
 You can configure the StorageClass created by the Helm Chart by editing the Helm Chart values.
 
-`fsType` specifies the filesystem type of the volume. Supported filesystems are `ext4`, `xfs` and `btrfs`(experimental).
+`fsType` specifies the filesystem type of the volume. Supported filesystems are `ext4`, `xfs` and `btrfs`(beta).
 
 `volumeBindingMode` can be either `WaitForFirstConsumer` or `Immediate`.
 `WaitForFirstConsumer` is recommended because TopoLVM cannot schedule pods
@@ -31,6 +32,9 @@ wisely if `volumeBindingMode` is `Immediate`.
 `additionalParameters` defines additional parameters for the StorageClass.
 You can use it to set `device-class` that the StorageClass will use.
 The `device-class` is described in the [LVMd](lvmd.md) document.
+
+`reclaimPolicy` can be either `Delete` or `Retain`.
+If you delete a PVC whose corresponding PV has `Retain` reclaim policy, the corresponding `LogicalVolume` resource and the LVM logical volume are *NOT* deleted. If you delete this `LogicalVolume` resource after deleting the PVC, the related LVM logical volume is also deleted.
 
 ## Pod Priority
 
@@ -166,6 +170,14 @@ This section describes how to switch to DaemonSet LVMd from LVMd running as a sy
    <snip>
    ```
 
+### Use different LVMd configurations on different nodes
+
+Depending on your setup, you might want to deploy different LVMd configurations on different nodes. You can do this by using [`lvmd.additionalConfigs` in `values.yaml` file](https://github.com/topolvm/topolvm/blob/3ddfec27480ca0381c6b0ec4b9e536afdff1aad6/charts/topolvm/values.yaml#L194-L203). Check the comments there for more details.
+
+Please note that `lvmd.additionalConfigs` will only work as expected if you use the managed (i.e., `DaemonSet`) version of LVMd. This feature won't work if you use embedded or unmanaged version of LVMd.
+
+See also [#555](https://github.com/topolvm/topolvm/issues/555) and [#973](https://github.com/topolvm/topolvm/issues/973).
+
 ## Certificates
 
 TopoLVM uses webhooks and its requires TLS certificates.
@@ -246,7 +258,7 @@ apiVersion: kubeadm.k8s.io/v1beta3
 kind: ClusterConfiguration
 metadata:
   name: config
-kubernetesVersion: v1.27.3
+kubernetesVersion: v1.34.3
 scheduler:
   extraVolumes:
     - name: "config"
@@ -298,7 +310,7 @@ Almost all scoring algorithms in `kube-scheduler` are weighted as `"weight": 1`.
 So if you want to give a priority to the scoring by `topolvm-scheduler`, you have to set the weight as a value larger than one like as follows:
 
 ```yaml
-apiVersion: kubescheduler.config.k8s.io/v1beta3
+apiVersion: kubescheduler.config.k8s.io/v1
 kind: KubeSchedulerConfiguration
 ...
 extenders:

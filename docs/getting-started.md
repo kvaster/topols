@@ -17,23 +17,25 @@ helm repo add topolvm https://topolvm.github.io/topolvm
 helm repo update
 ```
 
-TopoLVM uses webhooks. To work webhooks properly, add a label to the target namespace. We also recommend to use a dedicated namespace.
-
-```sh
-kubectl label namespace topolvm-system topolvm.io/webhook=ignore
-kubectl label namespace kube-system topolvm.io/webhook=ignore
-```
-
 Then, install TopoLVM with the release name `topolvm`.
 
 ```sh
 helm install --namespace=topolvm-system topolvm topolvm/topolvm
 ```
 
+> [!NOTE]
+> If you'd like to install TopoLVM in a namespace other than `topolvm-system`, you
+> must set its name in the `.webhook.{pvc,pod}MutatingWebhook.ignoreNamespaces`
+> field in values.yaml.  By doing so, TopoLVM's mutating webhooks, which depend on
+> topolvm-controller in the installed namespace, won't be used when a Pod or a PVC
+> is created in the same namespace, and TopoLVM's startup process won't get stuck
+> due to a circular dependency.
+
 If you want to install cert-manager together, use the following command instead.
 
 ```sh
-kubectl apply -f https://github.com/jetstack/cert-manager/releases/download/${VERSION}/cert-manager.crds.yaml
+CERT_MANAGER_VERSION=v1.17.4
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/${CERT_MANAGER_VERSION}/cert-manager.crds.yaml
 
 helm install --namespace=topolvm-system topolvm topolvm/topolvm --set cert-manager.enabled=true
 ```
@@ -70,7 +72,7 @@ metadata:
 spec:
   containers:
   - name: pause
-    image: registry.k8s.io/pause
+    image: registry.k8s.io/pause:3.9
     volumeMounts:
     - mountPath: /data
       name: volume

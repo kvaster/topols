@@ -11,7 +11,7 @@ import (
 )
 
 func usage() {
-	io.WriteString(os.Stderr, `Usage: hypertopols COMMAND [ARGS ...]
+	_, _ = io.WriteString(os.Stderr, `Usage: hypertopols COMMAND [ARGS ...]
 
 COMMAND:
     topols-controller:  TopoLS CSI controller service.

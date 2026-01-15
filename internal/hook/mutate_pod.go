@@ -28,11 +28,11 @@ var pmLogger = ctrl.Log.WithName("pod-mutator")
 // podMutator mutates pods using PVC for TopoLS.
 type podMutator struct {
 	getter  *getter.RetryMissingGetter
-	decoder *admission.Decoder
+	decoder admission.Decoder
 }
 
 // PodMutator creates a mutating webhook for Pods.
-func PodMutator(r client.Reader, apiReader client.Reader, dec *admission.Decoder) http.Handler {
+func PodMutator(r client.Reader, apiReader client.Reader, dec admission.Decoder) http.Handler {
 	return &webhook.Admission{
 		Handler: &podMutator{
 			getter:  getter.NewRetryMissingGetter(r, apiReader),
@@ -188,9 +188,8 @@ func (m *podMutator) pvcCapacity(
 		return "", 0, false, nil
 	}
 
-	if pvc.Spec.StorageClassName == nil {
-		// empty class name may appear when DefaultStorageClass admission plugin
-		// is turned off, or there are no default StorageClass.
+	if pvc.Spec.StorageClassName == nil || *pvc.Spec.StorageClassName == "" {
+		// Storage class name may be empty (nil or ""). We have nothing to do with such PVCs.
 		// https://kubernetes.io/docs/concepts/storage/persistent-volumes/#class-1
 		return "", 0, false, nil
 	}

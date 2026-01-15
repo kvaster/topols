@@ -15,7 +15,15 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/config"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+)
+
+const (
+	logicalVolumeNameBase = "lv"
+	nodeNameBase          = "node"
+	pvcNameBase           = "pvc"
+	storageClassNameBase  = "sc"
 )
 
 var volumes = &[]*lsm.LogicalVolume{}
@@ -78,14 +86,18 @@ var _ = Describe("LogicalVolume controller", func() {
 	var lsm lsm.Client
 
 	startReconciler := func(suffix string) {
+		skipNameValidation := true
 		mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 			Scheme: scheme,
+			Controller: config.Controller{
+				SkipNameValidation: &skipNameValidation,
+			},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
 		lsm = MockLsmClient{}
 
-		reconciler := NewLogicalVolumeReconciler(mgr.GetClient(), lsm, "node"+suffix)
+		reconciler := NewLogicalVolumeReconciler(mgr.GetClient(), lsm, nodeNameBase+suffix)
 		err = reconciler.SetupWithManager(mgr)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -105,7 +117,7 @@ var _ = Describe("LogicalVolume controller", func() {
 	setupResources := func(ctx context.Context, suffix string) topolsv1.LogicalVolume {
 		node := corev1.Node{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "node" + suffix,
+				Name: nodeNameBase + suffix,
 				Finalizers: []string{
 					topols.NodeFinalizer,
 				},
@@ -116,7 +128,7 @@ var _ = Describe("LogicalVolume controller", func() {
 
 		sc := storegev1.StorageClass{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "sc" + suffix,
+				Name: storageClassNameBase + suffix,
 			},
 			Provisioner: topols.PluginName,
 		}
@@ -126,7 +138,7 @@ var _ = Describe("LogicalVolume controller", func() {
 		ns := createNamespace()
 		pvc := corev1.PersistentVolumeClaim{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "pvc" + suffix,
+				Name:      pvcNameBase + suffix,
 				Namespace: ns,
 				Annotations: map[string]string{
 					AnnSelectedNode: node.Name,
@@ -149,7 +161,7 @@ var _ = Describe("LogicalVolume controller", func() {
 
 		lv := topolsv1.LogicalVolume{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "lv" + suffix,
+				Name: logicalVolumeNameBase + suffix,
 			},
 			Spec: topolsv1.LogicalVolumeSpec{
 				NodeName: node.Name,

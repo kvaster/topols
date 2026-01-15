@@ -70,7 +70,7 @@ func (r *LogicalVolumeReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	if lv.ObjectMeta.DeletionTimestamp == nil {
+	if lv.DeletionTimestamp == nil {
 		if !controllerutil.ContainsFinalizer(lv, topols.LogicalVolumeFinalizer) {
 			lv2 := lv.DeepCopy()
 			controllerutil.AddFinalizer(lv2, topols.LogicalVolumeFinalizer)
@@ -79,7 +79,7 @@ func (r *LogicalVolumeReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 				log.Error(err, "failed to add finalizer", "name", lv.Name)
 				return ctrl.Result{}, err
 			}
-			return ctrl.Result{Requeue: true}, nil
+			return ctrl.Result{RequeueAfter: requeueIntervalForSimpleUpdate}, nil
 		}
 
 		if !containsKeyAndValue(lv.Labels, topols.CreatedbyLabelKey, topols.CreatedbyLabelValue) {
@@ -93,7 +93,7 @@ func (r *LogicalVolumeReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 				log.Error(err, "failed to add label", "name", lv.Name)
 				return ctrl.Result{}, err
 			}
-			return ctrl.Result{Requeue: true}, nil
+			return ctrl.Result{RequeueAfter: requeueIntervalForSimpleUpdate}, nil
 		}
 
 		if lv.Status.VolumeID == "" {
@@ -141,7 +141,7 @@ func (r *LogicalVolumeReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *LogicalVolumeReconciler) removeLVIfExists(ctx context.Context, log logr.Logger, lv *topolsv1.LogicalVolume) error {
+func (r *LogicalVolumeReconciler) removeLVIfExists(_ context.Context, log logr.Logger, lv *topolsv1.LogicalVolume) error {
 	err := r.lsmc.RemoveLV(string(lv.UID), lv.Spec.DeviceClass)
 	if errors.Is(err, lsm.ErrNoVolume) {
 		log.Info("LV already removed", "name", lv.Name, "uid", lv.UID)
@@ -155,7 +155,7 @@ func (r *LogicalVolumeReconciler) removeLVIfExists(ctx context.Context, log logr
 	return nil
 }
 
-func (r *LogicalVolumeReconciler) volumeExists(ctx context.Context, log logr.Logger, lv *topolsv1.LogicalVolume) (bool, error) {
+func (r *LogicalVolumeReconciler) volumeExists(_ context.Context, log logr.Logger, lv *topolsv1.LogicalVolume) (bool, error) {
 	volumes, err := r.lsmc.GetLVList(lv.Spec.DeviceClass)
 	if err != nil {
 		log.Error(err, "failed to get list of LV")
@@ -211,6 +211,10 @@ func (r *LogicalVolumeReconciler) createLV(ctx context.Context, log logr.Logger,
 				return err
 			}
 			sourceVolID := sourcelv.Status.VolumeID
+			currentSize := sourcelv.Status.CurrentSize.Value()
+			if reqBytes < currentSize {
+				return fmt.Errorf("cannot create new LV, requested size %d is smaller than source LV size %d", reqBytes, currentSize)
+			}
 
 			// Create a snapshot lv
 			volume, err = r.lsmc.CreateLVSnapshot(string(lv.UID), lv.Spec.DeviceClass, sourceVolID, uint64(reqBytes), lv.Spec.AccessType)
