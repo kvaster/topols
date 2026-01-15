@@ -18,6 +18,9 @@ on:
         default: "false"
         type: string
 
+permissions:
+  packages: write
+
 jobs:
   build-images:
     name: "build-images"
@@ -50,8 +53,8 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GHCR }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - run: make multi-platform-image-${{ matrix.image }}
         env:
           TOPOLS_VERSION: ${{ inputs.topols_version }}
