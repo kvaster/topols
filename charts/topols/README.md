@@ -119,7 +119,7 @@ You need to configure kube-scheduler to use topols-scheduler extender by referri
 | env.topols_scheduler | list | `[]` | Specify environment variables for topols_scheduler container. |
 | image.csi.csiProvisioner | string | `nil` | Specify csi-provisioner image. If not specified, `ghcr.io/kvaster/topols-with-sidecar:{{ .Values.image.tag }}` will be used. |
 | image.csi.csiResizer | string | `nil` | Specify csi-resizer image. If not specified, `ghcr.io/kvaster/topols-with-sidecar:{{ .Values.image.tag }}` will be used. |
-| image.csi.csiSnapshotter | string | `nil` | Specify csi-snapshot image. If not specified, `ghcr.io/topolvm/topolvm-with-sidecar:{{ .Values.image.tag }}` will be used. |
+| image.csi.csiSnapshotter | string | `nil` | Specify csi-snapshot image. If not specified, `ghcr.io/topols/topols-with-sidecar:{{ .Values.image.tag }}` will be used. |
 | image.csi.livenessProbe | string | `nil` | Specify livenessprobe image. If not specified, `ghcr.io/kvaster/topols-with-sidecar:{{ .Values.image.tag }}` will be used. |
 | image.csi.nodeDriverRegistrar | string | `nil` | Specify csi-node-driver-registrar: image. If not specified, `ghcr.io/kvaster/topols-with-sidecar:{{ .Values.image.tag }}` will be used. |
 | image.pullPolicy | string | `nil` | TopoLS image pullPolicy. |
@@ -166,7 +166,7 @@ You need to configure kube-scheduler to use topols-scheduler extender by referri
 | resources.csi_resizer | object | `{}` | Specify resources. # ref: https://kubernetes.io/docs/user-guide/compute-resources/ |
 | resources.csi_snapshotter | object | `{}` | Specify resources. # ref: https://kubernetes.io/docs/user-guide/compute-resources/ |
 | resources.liveness_probe | object | `{}` | Specify resources. # ref: https://kubernetes.io/docs/user-guide/compute-resources/ |
-| resources.topols_controller | object | `{}` |  |
+| resources.topols_controller | object | `{}` | Specify resources. # ref: https://kubernetes.io/docs/user-guide/compute-resources/ |
 | resources.topols_node | object | `{}` | Specify resources. # ref: https://kubernetes.io/docs/user-guide/compute-resources/ |
 | resources.topols_scheduler | object | `{}` |  |
 | scheduler.additionalContainers | list | `[]` | Define extra containers to add to the Daemonset. Please ensure not to use any existing container names. |
@@ -198,10 +198,10 @@ You need to configure kube-scheduler to use topols-scheduler extender by referri
 | webhook.caBundle | string | `nil` | Specify the certificate to be used for AdmissionWebhook. |
 | webhook.existingCertManagerIssuer | object | `{}` | Specify the cert-manager issuer to be used for AdmissionWebhook. |
 | webhook.podMutatingWebhook.enabled | bool | `false` | Enable Pod MutatingWebhook. |
-| webhook.podMutatingWebhook.ignoreNamespaces | list | `["kube-system","topolvm-system"]` | Namespaces to be ignored by the Pod MutatingWebhook. |
+| webhook.podMutatingWebhook.ignoreNamespaces | list | `["kube-system","topols-system"]` | Namespaces to be ignored by the Pod MutatingWebhook. |
 | webhook.podMutatingWebhook.objectSelector | object | `{}` | Labels required on Pods for webhook action. **WARNING**: Modifying objectSelector can affect TopoLS Pod scheduling. Proceed with caution. # ref: https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/#matching-requests-objectselector |
 | webhook.pvcMutatingWebhook.enabled | bool | `true` | Enable PVC MutatingWebhook. |
-| webhook.pvcMutatingWebhook.ignoreNamespaces | list | `["kube-system","topolvm-system"]` | Namespaces to be ignored by the PVC MutatingWebhook. |
+| webhook.pvcMutatingWebhook.ignoreNamespaces | list | `["kube-system","topols-system"]` | Namespaces to be ignored by the PVC MutatingWebhook. |
 | webhook.pvcMutatingWebhook.objectSelector | object | `{}` | Labels required on PVCs for webhook action. **WARNING**: Modifying objectSelector can affect TopoLS PVC management. Proceed with caution. # ref: https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/#matching-requests-objectselector |
 
 ## Generate Manifests
