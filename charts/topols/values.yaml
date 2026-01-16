@@ -26,7 +26,7 @@ image:
     csiResizer:  # registry.k8s.io/sig-storage/csi-resizer:v1.6.0
 
     # image.csi.csiSnapshotter -- Specify csi-snapshot image.
-    # If not specified, `ghcr.io/topolvm/topolvm-with-sidecar:{{ .Values.image.tag }}` will be used.
+    # If not specified, `ghcr.io/topols/topols-with-sidecar:{{ .Values.image.tag }}` will be used.
     csiSnapshotter:  # registry.k8s.io/sig-storage/csi-snapshotter:v6.0.1
 
     # image.csi.livenessProbe -- Specify livenessprobe image.
@@ -427,7 +427,7 @@ resources:
   # limits:
   #   cpu: "200m"
   #   memory: "200Mi"
-  # resources.topolvm_controller -- Specify resources.
+  # resources.topols_controller -- Specify resources.
   ## ref: https://kubernetes.io/docs/user-guide/compute-resources/
   topols_controller: {}
   #  requests:
@@ -560,7 +560,7 @@ webhook:
     # webhook.podMutatingWebhook.ignoreNamespaces -- Namespaces to be ignored by the Pod MutatingWebhook.
     ignoreNamespaces:
       - kube-system
-      - topolvm-system
+      - topols-system
   pvcMutatingWebhook:
     # webhook.pvcMutatingWebhook.enabled -- Enable PVC MutatingWebhook.
     enabled: true
@@ -572,7 +572,7 @@ webhook:
     # webhook.pvcMutatingWebhook.ignoreNamespaces -- Namespaces to be ignored by the PVC MutatingWebhook.
     ignoreNamespaces:
       - kube-system
-      - topolvm-system
+      - topols-system
 
 # Container Security Context
 # ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/

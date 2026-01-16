@@ -93,8 +93,8 @@ spec:
             {{- toYaml . | nindent 12 }}
             {{- end }}
           volumeMounts:
-            {{- if .Values.node.volumeMounts.topolvmNode }}
-            {{- toYaml .Values.node.volumeMounts.topolvmNode | nindent 12 }}
+            {{- if .Values.node.volumeMounts.topolsNode }}
+            {{- toYaml .Values.node.volumeMounts.topolsNode | nindent 12 }}
             {{- else }}
           - name: node-plugin-dir
             mountPath: {{ .Values.node.kubeletWorkDirectory }}/plugins/topols.kvaster.com/node/
