@@ -124,11 +124,11 @@ spec:
             - --http-endpoint=:9809
           ports:
             - containerPort: 9809
-              name: healthz-registrar
+              name: healthz-reg
           livenessProbe:
             httpGet:
               path: /healthz
-              port: healthz-registrar
+              port: healthz-reg
             {{- with .Values.livenessProbe.csi_registrar.failureThreshold }}
             failureThreshold: {{ . }}
             {{- end }}
