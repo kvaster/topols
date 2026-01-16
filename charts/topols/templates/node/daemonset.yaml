@@ -59,7 +59,7 @@ spec:
           args: {{ toYaml . | nindent 12 }}
           {{- end }}
           ports:
-            - name: healthz
+            - name: healthz-node
               containerPort: 9808
               protocol: TCP
             - name: metrics
@@ -68,7 +68,7 @@ spec:
           livenessProbe:
             httpGet:
               path: /healthz
-              port: healthz
+              port: healthz-node
             {{- with .Values.livenessProbe.topols_node.failureThreshold }}
             failureThreshold: {{ . }}
             {{- end }}
@@ -124,11 +124,11 @@ spec:
             - --http-endpoint=:9809
           ports:
             - containerPort: 9809
-              name: healthz
+              name: healthz-registrar
           livenessProbe:
             httpGet:
               path: /healthz
-              port: healthz
+              port: healthz-registrar
             {{- with .Values.livenessProbe.csi_registrar.failureThreshold }}
             failureThreshold: {{ . }}
             {{- end }}
