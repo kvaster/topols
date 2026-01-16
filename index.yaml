@@ -10,6 +10,31 @@ entries:
       artifacthub.io/license: Apache-2.0
     apiVersion: v2
     appVersion: 0.39.0
+    created: "2026-01-16T07:43:09.293761188Z"
+    dependencies:
+    - condition: cert-manager.enabled
+      name: cert-manager
+      repository: https://charts.jetstack.io
+      version: ~1.17.x
+    description: Topols
+    digest: fce839324adfc11f54b1e7f97946c3927e350311e9512e343b564e8111332a74
+    home: https://github.com/kvaster/topols
+    name: topols
+    sources:
+    - https://github.com/kvaster/topols
+    type: application
+    urls:
+    - https://github.com/kvaster/topols/releases/download/topols-chart-v15.9.1/topols-15.9.1.tgz
+    version: 15.9.1
+  - annotations:
+      artifacthub.io/images: |
+        - name: topols-with-sidecar
+          image: ghcr.io/kvaster/topols-with-sidecar:0.39.0
+        - name: topols
+          image: ghcr.io/kvaster/topols:0.39.0
+      artifacthub.io/license: Apache-2.0
+    apiVersion: v2
+    appVersion: 0.39.0
     created: "2026-01-15T21:58:30.281385343Z"
     dependencies:
     - condition: cert-manager.enabled
@@ -170,4 +195,4 @@ entries:
     urls:
     - https://github.com/kvaster/topols/releases/download/topols-chart-v3.2.0/topols-3.2.0.tgz
     version: 3.2.0
-generated: "2026-01-15T21:58:30.281424155Z"
+generated: "2026-01-16T07:43:09.29382128Z"
