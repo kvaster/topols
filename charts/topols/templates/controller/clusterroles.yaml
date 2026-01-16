@@ -36,7 +36,7 @@ rules:
       - list
       - watch
   - apiGroups:
-      - "{{ include "topols.pluginName" . }}"
+      - topols.kvaster.com
     resources:
       - logicalvolumes
     verbs:
